@@ -97,6 +97,7 @@ class Incident:
         self.service_remaining: float = 0.0
         self.retry_after: int = 0
         self.last_dispatch_tick: Optional[int] = None
+        self.last_renog_tick: int = 0        # anti-thrash: cooldown anchor
 
     def to_dict(self) -> Dict[str, object]:
         return {"id": self.id, "node": self.node, "severity": self.severity,
@@ -540,17 +541,9 @@ class Engine:
             self._run_greedy_dispatch(inc)
             return
         eligible = self._eligible_units()
-        self._event_emit(ev.auction_phase(
-            self.tick, inc.id, "announce",
-            {"eligible": len(eligible), "severity": inc.severity}))
         rec = self.auctioneer.run_auction(
             inc.id, inc.severity, inc.node, eligible, self.network)
-        for bid in rec.bids:
-            self._event_emit(ev.auction_phase(
-                self.tick, inc.id, "bid", bid.to_dict()))
-        for ex in rec.excluded:
-            self._event_emit(ev.auction_phase(
-                self.tick, inc.id, "reject", ex))
+        self._emit_auction_transcript(inc, rec, len(eligible))
         if rec.winner is None:
             self._event_emit(ev.dispatch_failed(
                 self.tick, inc.id, "no eligible unit with feasible ETA"))
@@ -566,6 +559,24 @@ class Engine:
              "algorithm": rec.winning_bid.algorithm,
              "late": late}))
         self._commit_dispatch(inc, amb)
+
+    def _emit_auction_transcript(self, inc: Incident, rec,
+                                 n_eligible: int = 0,
+                                 renegotiation: bool = False) -> None:
+        """Emit the announce/bid/reject phases of an auction. Shared by the
+        initial CNP award and CNP re-negotiation scans so every auction is
+        fully logged; re-auctions carry a ``renegotiation`` mark."""
+        mark = {"renegotiation": True} if renegotiation else {}
+        self._event_emit(ev.auction_phase(
+            self.tick, inc.id, "announce",
+            {**mark, "eligible": n_eligible,
+             "severity": inc.severity}))
+        for bid in rec.bids:
+            self._event_emit(ev.auction_phase(
+                self.tick, inc.id, "bid", {**mark, **bid.to_dict()}))
+        for ex in rec.excluded:
+            self._event_emit(ev.auction_phase(
+                self.tick, inc.id, "reject", {**mark, **ex}))
 
     def _run_greedy_dispatch(self, inc: Incident) -> None:
         """Baseline dispatch policy: nearest available unit, no auction.
@@ -584,6 +595,91 @@ class Engine:
             self.tick, inc.id, amb.id, eta, len(eligible), res.algorithm,
             inc.node))
         self._commit_dispatch(inc, amb)
+
+    # ------------------------------------------------------------------ #
+    # CNP re-negotiation (dynamic task re-allocation)                    #
+    # ------------------------------------------------------------------ #
+    def _remaining_eta(self, amb: Ambulance, dest_node: str) -> Optional[float]:
+        """Seconds still needed for ``amb`` to reach ``dest_node`` along
+        its current route (edge-progress aware). None when the route is
+        empty or a blockage lies ahead."""
+        r = amb.remaining_route()
+        if not r:
+            return None
+        eta = amb.edge_progress if len(r) >= 2 else 0.0
+        for i in range(1, len(r) - 1):
+            c = self.network.true_cost(r[i], r[i + 1])
+            if c >= INF:
+                return None
+            eta += c
+        return eta
+
+    def _release_unit(self, amb: Ambulance) -> None:
+        """Cancel a unit's active contract and return it to the pool."""
+        amb.cancel_route()
+        amb.destination = None
+        amb.incident_id = None
+        amb.hospital_id = None
+        amb.lrta = None
+        amb.dstar = None
+        self._ambulance_status_change(amb, "idle")
+
+    def _maybe_renegotiate(self) -> None:
+        """Dynamic task re-allocation for in-flight CNP contracts: every
+        ``renog_check_every`` ticks, each incident still being approached
+        is re-auctioned among currently eligible units. The contract moves
+        only when a challenger's ETA beats the incumbent's remaining ETA
+        by at least the ``reassign_penalty_seconds`` anti-thrash margin;
+        per-incident cooldown further damps churn."""
+        if not self.renog_cfg.get("renog_enabled", True):
+            return
+        if self.policies["dispatch"] != "cnp":
+            return
+        cfg = self.renog_cfg
+        cooldown = int(cfg.get("renog_cooldown_ticks", 60))
+        penalty = float(cfg.get("reassign_penalty_seconds", 60.0))
+        for inc in list(self._active_incidents):
+            if inc.on_scene_tick is not None:
+                continue
+            if self.tick - inc.last_renog_tick < cooldown:
+                continue
+            incumbent = self.ambulance(inc.ambulance_id \
+                                       if inc.ambulance_id else "")
+            if incumbent is None or incumbent.status != "enroute":
+                continue
+            if incumbent.lrta is not None:
+                continue  # real-time LRTA* contracts are not re-auctioned
+            incumbent_eta = self._remaining_eta(incumbent, inc.node)
+            if incumbent_eta is None:
+                continue
+            eligible = [a for a in self._eligible_units()
+                        if a.id != incumbent.id]
+            if not eligible:
+                continue
+            rec = self.auctioneer.run_auction(
+                inc.id, inc.severity, inc.node, eligible, self.network)
+            self._emit_auction_transcript(inc, rec, len(eligible),
+                                          renegotiation=True)
+            if rec.winner is None:
+                continue
+            challenger = self.ambulance(rec.winner)
+            assert challenger is not None
+            challenger_eta = rec.winning_bid.eta_seconds
+            if challenger_eta + penalty >= incumbent_eta:
+                continue  # strictly-better threshold not met: keep contract
+            inc.last_renog_tick = self.tick
+            self.stats["renegotiations"] += 1
+            self.stats["renegotiation_savings_s"] += max(
+                0.0, incumbent_eta - challenger_eta)
+            self._event_emit(ev.renegotiated(
+                self.tick, inc.id, incumbent.id, challenger.id,
+                incumbent_eta, challenger_eta, penalty))
+            self._release_unit(incumbent)
+            old_assigned = inc.assigned_tick
+            self._commit_dispatch(inc, challenger)
+            # response time is measured from the original report, not the
+            # re-negotiation tick
+            inc.assigned_tick = old_assigned
 
     def _commit_dispatch(self, inc: Incident, amb: Ambulance) -> None:
         """Award an incident to a unit and start its route. Shared by the
@@ -935,6 +1031,10 @@ class Engine:
         # 4. idle positioning epoch ----------------------------------------
         if self.tick % int(self.cfg["idle_reposition_every"]) == 0:
             self._schedule_idle_drift()
+
+        # 5. CNP re-negotiation scan ----------------------------------------
+        if self.tick % int(self.renog_cfg.get("renog_check_every", 5)) == 0:
+            self._maybe_renegotiate()
 
         self._refresh_stats()
 

@@ -102,6 +102,33 @@ def greedy_dispatch(tick: int, incident_id: str, ambulance_id: str,
     )
 
 
+def renegotiated(tick: int, incident_id: str, old_ambulance_id: str,
+                 new_ambulance_id: str, old_eta_seconds: float,
+                 new_eta_seconds: float, penalty_seconds: float) -> Event:
+    """CNP re-negotiation: the contract for an incident was re-awarded from
+    one unit to a strictly better one *before* the original reached the
+    scene. ``penalty_seconds`` is the reassignment cost that a challenger
+    must beat — the anti-thrash guard."""
+    saved = max(0.0, old_eta_seconds - new_eta_seconds)
+    return Event(
+        tick, "dispatch.renegotiated",
+        f"CNP re-negotiation for {incident_id}: unit {old_ambulance_id} "
+        f"({_fmt_eta(old_eta_seconds)} remaining ETA) superseded by "
+        f"{new_ambulance_id} ({_fmt_eta(new_eta_seconds)} vs "
+        f"{_fmt_eta(penalty_seconds)} reassignment penalty) — strictly "
+        f"better, {_fmt_eta(saved)} saved.",
+        {"incident_id": incident_id,
+         "old_ambulance_id": old_ambulance_id,
+         "new_ambulance_id": new_ambulance_id,
+         "old_eta_seconds": round(old_eta_seconds, 1),
+         "new_eta_seconds": round(new_eta_seconds, 1),
+         "penalty_seconds": penalty_seconds,
+         "savings_seconds": round(saved, 1),
+         "reason": "strictly lower ETA beats incumbent plus reassignment "
+                    "penalty (anti-thrash)"},
+    )
+
+
 def ambulance_arrived_scene(tick: int, ambulance_id: str, incident_id: str,
                             on_scene_seconds: float) -> Event:
     return Event(
