@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-*.pngbenchmark_out/
+*.png
+benchmark_out/
