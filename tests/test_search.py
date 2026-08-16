@@ -149,6 +149,31 @@ class TestDStarLite:
         fresh = astar(net, start, goal)
         assert cost_dsl == pytest.approx(fresh.cost)
 
+    def test_warm_replan_amortization(self, net):
+        """The amortised advantage of incremental replanning: one warm
+        D* Lite solver absorbs several successive cost changes for fewer
+        cumulative expansions than a *single* fresh A* rerun — the claim
+        the engine measures per replan and reports in benchmarks."""
+        start, goal = "n0_0", "n4_5"
+        dsl = DStarLite(net, start, goal)
+        dsl.replan()
+        dsl.extract_path()
+        cold = dsl.s_expanded
+        # three cumulative blockage repairs on the evolving path (never
+        # the first edge — the start must keep an exit)
+        for _ in range(3):
+            p = dsl.extract_path()
+            blocked = (p[1], p[2])
+            net.block_edge(*blocked, reveal=True)
+            dsl.edge_cost_changed(*blocked)
+            assert dsl.replan()
+            assert dsl.extract_path()[-1] == goal
+        warm_total = dsl.s_expanded - cold
+        fresh = astar(net, start, goal)
+        assert fresh.cost is not None
+        assert warm_total < fresh.nodes_expanded
+        assert dsl.s_expanded > 0
+
 
 class TestArena:
     def test_arena_returns_all_algorithms(self, net):

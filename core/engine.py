@@ -37,6 +37,8 @@ from .graph import RoadNetwork, ZoneMap, build_grid_network
 from .hospital_allocation import HospitalAllocator
 from .mdp import IdlePositioningMDP, MDPResult
 from .metrics import zone_equity
+from .policies import (first_free_hospital, greedy_nearest_dispatch,
+                       resolve_policies)
 from .scenarios import DEFAULT_CONFIG, resolve_config
 from .search import (DStarLite, LRTAStar, SearchResult, algorithm_arena,
                      astar, euclidean_heuristic)
@@ -130,6 +132,7 @@ class Ambulance:
         self.total_distance_km = 0.0
         self.avg_speed = 0.0
         self.positions_visited: int = 0
+        self.freed_tick: Optional[int] = None   # tick the unit last became free
 
     # -- movement helpers -------------------------------------------------- #
     def current_edge(self) -> Optional[Tuple[str, str]]:
@@ -209,6 +212,13 @@ class Engine:
         self.auctioneer = CnpAuctioneer(**self.cfg["dispatch"])
         self.allocator = HospitalAllocator(
             max_distance_units=self.cfg["csp"]["max_distance_units"])
+        self.policies = resolve_policies(self.cfg.get("policies"))
+        self.cfg["policies"] = dict(self.policies)
+        self._dstar_counted: Dict[str, int] = {}
+        self.renog_cfg = self.cfg.setdefault("cnp", {
+            "renog_enabled": True, "reassign_penalty_seconds": 60.0,
+            "renog_check_every": 5, "renog_cooldown_ticks": 60,
+        })
         self.mdp_cache: Optional[MDPResult] = None
         self.mdp_iterations_total = 0
         self.mdp_solves = 0
@@ -232,7 +242,7 @@ class Engine:
             "csp_nodes": 0, "csp_solves": 0, "mdp_solves": 0,
             "dispatch_wins": {}, "arena_runs": 0,
             "renegotiations": 0, "renegotiation_savings_s": 0.0,
-            "policies": {},
+            "policies": dict(self.policies),
             "search_expansions": {"astar": 0, "lrta": 0, "dstar": 0},
             "replan_full_expansions": 0,
             "replan_savings_expansions": 0,
@@ -357,6 +367,7 @@ class Engine:
                                               new))
             amb.status = new
         if new == "idle":
+            amb.freed_tick = self.tick
             # a unit just freed up: let queued incidents bid immediately
             for inc in self._active_incidents:
                 if inc.status == "pending":
@@ -414,11 +425,14 @@ class Engine:
 
     def _replan_unit(self, amb: Ambulance, cause: str,
                      changed_edges: Optional[List[Tuple[str, str]]] = None) -> bool:
-        """Incremental replanning with D* Lite. Returns True when a new
-        route was installed."""
+        """Replan the route of one unit. Smart policy: incremental D* Lite;
+        baseline policy: full A* rerun from scratch. Returns True when a
+        new route was installed."""
         goal = self._current_goal_node(amb)
         if goal is None or goal == amb.node:
             return False
+        if self.policies["replan"] != "dstar":
+            return self._replan_full_astar(amb, goal, cause)
         old_len = len(amb.remaining_route())
         if amb.dstar is None or amb.dstar.goal != goal:
             amb.dstar = DStarLite(self.network, amb.node, goal)
@@ -430,16 +444,58 @@ class Engine:
             amb.dstar.edge_cost_changed(u, v)
         amb.dstar.replan()
         new_path = amb.dstar.extract_path()
-        self.stats["search_expansions"]["dstar"] += amb.dstar.s_expanded
+        # per-replan expansion accounting: the solver's counter is
+        # cumulative, so only the delta since the previous replan counts
+        prev = self._dstar_counted.get(amb.id, 0)
+        delta = amb.dstar.s_expanded - prev
+        self._dstar_counted[amb.id] = amb.dstar.s_expanded
+        self.stats["search_expansions"]["dstar"] += delta
         if len(new_path) >= 2 and new_path[-1] == goal:
             self._set_route(amb, new_path, "D* Lite", goal)
             self.stats["replans"] += 1
             self._event_emit(ev.route_replanned(
                 self.tick, amb.id, amb.incident_id or "",
                 old_len, len(new_path) - 1, "D* Lite", cause,
-                max(0, old_len - (len(new_path) - 1)), amb.dstar.s_expanded))
+                max(0, old_len - (len(new_path) - 1)), delta))
+            self._measure_full_rerun(amb, goal, delta)
             return True
         return False
+
+    def _replan_full_astar(self, amb: Ambulance, goal: str,
+                           cause: str) -> bool:
+        """Baseline replan policy: throw away the search tree and run a
+        fresh A* from the unit's current position on every change."""
+        old_len = len(amb.remaining_route())
+        amb.dstar = None
+        res = astar(self.network, amb.node, goal)
+        self.stats["replan_full_expansions"] += res.nodes_expanded
+        if res.cost is None or len(res.path) < 2:
+            return False
+        self._set_route(amb, res.path, res.algorithm, goal)
+        self.stats["replans"] += 1
+        self._event_emit(ev.route_replanned(
+            self.tick, amb.id, amb.incident_id or "",
+            old_len, len(res.path) - 1, "A* full rerun", cause,
+            0, res.nodes_expanded))
+        return True
+
+    def _measure_full_rerun(self, amb: Ambulance, goal: str,
+                            dstar_expansions: int) -> None:
+        """Counterfactual measurement for the benchmark: how much would a
+        full A* rerun have cost for this same replan query? The route is
+        NOT installed — this is pure accounting for the savings metric."""
+        measure = astar(self.network, amb.node, goal)
+        self.stats["replan_full_expansions"] += measure.nodes_expanded
+        self._event_emit(ev.replan_summary(
+            self.tick, amb.id, amb.incident_id or "",
+            dstar_expansions, measure.nodes_expanded,
+            max(0, measure.nodes_expanded - dstar_expansions)))
+
+    def _station(self, sid: str) -> Optional[Station]:
+        for st in self.stations:
+            if st.id == sid:
+                return st
+        return None
 
     def _current_goal_node(self, amb: Ambulance) -> Optional[str]:
         if amb.destination and amb.destination.startswith("incident:"):
@@ -451,6 +507,9 @@ class Engine:
         if amb.destination and amb.destination.startswith("zone:"):
             return self.zones.zone_center_node(self.network,
                                                amb.destination[5:])
+        if amb.destination and amb.destination.startswith("station:"):
+            st = self._station(amb.destination.split(":", 1)[1])
+            return st.node if st else None
         return None
 
     def _set_route(self, amb: Ambulance, path: List[str], algorithm: str,
@@ -477,6 +536,9 @@ class Engine:
                 if a.status in ("idle", "drifting", "returning")]
 
     def _run_auction(self, inc: Incident) -> None:
+        if self.policies["dispatch"] != "cnp":
+            self._run_greedy_dispatch(inc)
+            return
         eligible = self._eligible_units()
         self._event_emit(ev.auction_phase(
             self.tick, inc.id, "announce",
@@ -503,9 +565,32 @@ class Engine:
              "eta_seconds": rec.winning_bid.eta_seconds,
              "algorithm": rec.winning_bid.algorithm,
              "late": late}))
+        self._commit_dispatch(inc, amb)
+
+    def _run_greedy_dispatch(self, inc: Incident) -> None:
+        """Baseline dispatch policy: nearest available unit, no auction.
+        Single-criterion selection, still fully logged + explainable."""
+        eligible = self._eligible_units()
+        pick = greedy_nearest_dispatch(inc.node, eligible, self.network)
+        if pick is None:
+            self._event_emit(ev.dispatch_failed(
+                self.tick, inc.id, "no eligible unit with feasible route"))
+            inc.retry_after = self.tick + 30
+            return
+        winner, eta, res = pick
+        amb = self.ambulance(winner)
+        assert amb is not None
+        self._event_emit(ev.greedy_dispatch(
+            self.tick, inc.id, amb.id, eta, len(eligible), res.algorithm,
+            inc.node))
+        self._commit_dispatch(inc, amb)
+
+    def _commit_dispatch(self, inc: Incident, amb: Ambulance) -> None:
+        """Award an incident to a unit and start its route. Shared by the
+        CNP award phase, the greedy baseline, and CNP re-negotiation, so
+        every assignment path runs through the same pipeline."""
         self.stats["dispatch_wins"][amb.id] = \
             self.stats["dispatch_wins"].get(amb.id, 0) + 1
-
         inc.status = "assigned"
         inc.ambulance_id = amb.id
         inc.assigned_tick = self.tick
@@ -612,6 +697,9 @@ class Engine:
         for i in waiting:
             seen.setdefault(i.id, i)
         waiting = list(seen.values())
+        if self.policies["hospital"] != "csp":
+            self._solve_allocations_first_free(waiting)
+            return
         res = self.allocator.solve(waiting, self.hospitals, self.network)
         self.stats["csp_solves"] += 1
         self.stats["csp_backtracks"] += res.backtracks
@@ -621,9 +709,24 @@ class Engine:
                     "nodes": res.nodes_explored,
                     "feasible": res.feasible,
                     "variables": len(waiting)}
+        self._apply_allocation(waiting, res.assignments, csp_info)
+
+    def _solve_allocations_first_free(self, waiting: List[Incident]) -> None:
+        """Baseline hospital policy: first hospital with any free bed,
+        roster order, no distance domain / CSP constraint checking."""
+        assignments = first_free_hospital(waiting, self.hospitals)
+        csp_info = {"policy": "first-free-baseline",
+                    "assignments": len(assignments),
+                    "backtracks": 0, "nodes": 0,
+                    "feasible": True, "variables": len(waiting)}
+        self._apply_allocation(waiting, assignments, csp_info)
+
+    def _apply_allocation(self, waiting: List[Incident],
+                          assignments: Dict[str, str],
+                          csp_info: Dict[str, Any]) -> None:
         for inc in waiting:
             amb = self.ambulance(inc.ambulance_id)
-            target = res.assignments.get(inc.id)
+            target = assignments.get(inc.id)
             if target is None:
                 # every hospital full: nearest-hospital fallback, flagged
                 target = min(self.hospitals,
@@ -731,6 +834,9 @@ class Engine:
     def _schedule_idle_drift(self) -> None:
         if self.tick % int(self.cfg["idle_reposition_every"]) != 0:
             return
+        if self.policies["idle"] != "mdp":
+            self._schedule_station_idle()
+            return
         idle = [a for a in self.ambulances if a.status == "idle"]
         if not idle:
             return
@@ -760,6 +866,33 @@ class Engine:
                 res.iterations, tres.cost,
                 f"Coverage prior favours {target} after {res.iterations} "
                 f"Bellman sweeps."))
+
+    def _schedule_station_idle(self) -> None:
+        """Baseline idle policy: every idle unit returns to its home
+        station (garage) whenever the reposition epoch fires — no zone
+        priors, no value iteration. Fully explainable as a baseline."""
+        for amb in self.ambulances:
+            if amb.status != "idle":
+                continue
+            st = self._station(amb.station) if amb.station else None
+            if st is None:
+                continue
+            from_zone = self.zones.zone_of_node(amb.node)
+            if amb.node == st.node:
+                self._event_emit(ev.idle_reposition(
+                    self.tick, amb.id, from_zone, from_zone, 0.0,
+                    "baseline: return-to-station", 0, 0.0,
+                    "Baseline policy keeps the unit at its home station."))
+                continue
+            res = self._dispatch_to(amb, st.node, f"station:{st.id}")
+            if res is None:
+                continue
+            self._ambulance_status_change(amb, "returning")
+            self._event_emit(ev.idle_reposition(
+                self.tick, amb.id, from_zone,
+                self.zones.zone_of_node(st.node), 0.0,
+                "baseline: return-to-station", 0, res.cost,
+                "Baseline policy returns the unit to its home station."))
 
     # ------------------------------------------------------------------ #
     # Main tick                                                          #
@@ -863,6 +996,9 @@ class Engine:
             return h is not None and amb.node == h.node
         if kind == "zone":
             return amb.node == self.zones.zone_center_node(self.network, ref)
+        if kind == "station":
+            st = self._station(ref)
+            return st is not None and amb.node == st.node
         return False
 
     def _extend_lrta(self, amb: Ambulance) -> None:
@@ -926,6 +1062,14 @@ class Engine:
                 amb.cancel_route()
                 amb.zone = ref
                 self._ambulance_status_change(amb, "idle")
+            return
+        if kind == "station":
+            st = self._station(ref)
+            if st and amb.node == st.node:
+                amb.destination = None
+                amb.cancel_route()
+                amb.zone = self.zones.zone_of_node(st.node)
+                self._ambulance_status_change(amb, "idle")
 
     # ------------------------------------------------------------------ #
     # Stats / snapshot                                                   #
@@ -950,6 +1094,15 @@ class Engine:
         # response times, plus the per-zone breakdown for the UIs
         self.stats["equity"] = zone_equity(self.stats["zone_response_times"],
                                             [z.id for z in self.zones.zones])
+        # replan cost savings: what the full A* rerun would have cost
+        # minus what the incremental planner actually paid (0 under the
+        # full-rerun baseline, which *is* the full cost by definition)
+        if self.policies["replan"] == "dstar":
+            self.stats["replan_savings_expansions"] = \
+                self.stats["replan_full_expansions"] \
+                - self.stats["search_expansions"]["dstar"]
+        else:
+            self.stats["replan_savings_expansions"] = 0
 
     def _incident_list(self) -> List[Incident]:
         """Active (not cleared) incidents plus recent cleared ones."""

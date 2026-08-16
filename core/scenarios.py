@@ -39,6 +39,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "dispatch": {
         "w_eta": 0.45, "w_dist": 0.20, "w_status": 0.15, "w_load": 0.20,
     },
+    "cnp": {                       # CNP re-negotiation (Addition 3)
+        "renog_enabled": True,
+        "reassign_penalty_seconds": 60.0,   # thrash guard
+        "renog_check_every": 5,             # ticks between re-auction scans
+        "renog_cooldown_ticks": 60,         # min gap between re-auctions per incident
+    },
+    "policies": {                   # smart algorithms vs naive baselines
+        "dispatch": "cnp",         #   | "greedy"      (nearest available)
+        "replan": "dstar",         #   | "full_astar"  (full rerun)
+        "idle": "mdp",             #   | "station"     (return to station)
+        "hospital": "csp",         #   | "first_free"  (first free bed)
+    },
     "csp": {"max_distance_units": 150.0},
     "mdp": {"gamma": 0.9, "lambda_cost": 0.12, "tau": 240.0,
             "epsilon": 1e-6},

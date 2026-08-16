@@ -87,6 +87,21 @@ def ambulance_dispatched(tick: int, ambulance_id: str, incident_id: str,
     )
 
 
+def greedy_dispatch(tick: int, incident_id: str, ambulance_id: str,
+                    eta_seconds: float, candidates: int,
+                    algorithm: str = "A*", scene_node: str = "") -> Event:
+    """Baseline-policy dispatch: nearest available unit, no CNP auction."""
+    return Event(
+        tick, "dispatch.greedy",
+        f"Greedy baseline: nearest available unit {ambulance_id} awarded "
+        f"incident {incident_id} (ETA {_fmt_eta(eta_seconds)}, single "
+        f"criterion, {candidates} candidate(s) — no CNP auction).",
+        {"ambulance_id": ambulance_id, "incident_id": incident_id,
+         "eta_seconds": eta_seconds, "candidates": candidates,
+         "algorithm": algorithm, "node": scene_node},
+    )
+
+
 def ambulance_arrived_scene(tick: int, ambulance_id: str, incident_id: str,
                             on_scene_seconds: float) -> Event:
     return Event(
@@ -173,6 +188,23 @@ def route_replanned(tick: int, ambulance_id: str, incident_id: str,
         {"ambulance_id": ambulance_id, "incident_id": incident_id,
          "old_len": old_len, "new_len": new_len, "algorithm": algorithm,
          "cause": cause, "shared_edges": saved_edges, "expansions": expansions},
+    )
+
+
+def replan_summary(tick: int, ambulance_id: str, incident_id: str,
+                   dstar_expansions: int, full_rerun_expansions: int,
+                   savings: int) -> Event:
+    """Counterfactual cost of a full rerun vs the actual incremental
+    replan, logged so the benchmark can show per-replan savings."""
+    return Event(
+        tick, "replan.cost_compare",
+        f"Replan cost: D* Lite {dstar_expansions} expansion(s) vs full A* "
+        f"rerun {full_rerun_expansions} — {savings} expansion(s) saved "
+        f"(unit {ambulance_id}, incident {incident_id}).",
+        {"ambulance_id": ambulance_id, "incident_id": incident_id,
+         "dstar_expansions": dstar_expansions,
+         "full_rerun_expansions": full_rerun_expansions,
+         "savings": savings},
     )
 
 

@@ -499,8 +499,38 @@ class DStarLite:
         return None, None
 
     # -- main loop ----------------------------------------------------------- #
-    def compute_shortest_path(self, budget: int = 200_000) -> None:
+    def _pop(self) -> Tuple[Optional[str], Optional[Tuple[float, float]]]:
         while self.U:
+            k1, k2, _, s = heapq.heappop(self.U)
+            if self.g.get(s, INF) == self.rhs.get(s, INF):
+                continue
+            k_old = (k1, k2)
+            if k_old >= self._key(s):
+                return s, k_old
+            self._insert(s)
+        return None, None
+
+    def _top_key(self) -> Tuple[float, float]:
+        """Smallest (stored) key of any inconsistent state in U — the
+        textbook TopKey(). Lazy entries that have become consistent are
+        dropped on the way."""
+        while self.U:
+            k1, k2, _, s = self.U[0]
+            if self.g.get(s, INF) == self.rhs.get(s, INF):
+                heapq.heappop(self.U)
+                continue
+            return k1, k2
+        return INF, INF
+
+    def compute_shortest_path(self, budget: int = 200_000) -> None:
+        """Textbook D* Lite main loop with the early-exit condition:
+        stop once the start is consistent and no queued state has a key
+        smaller than the start's key — i.e. the search is done, even
+        though the queue may still hold stale entries."""
+        while True:
+            if self.g.get(self.start, INF) == self.rhs.get(self.start, INF) \
+                    and self._top_key() >= self._key(self.start):
+                break
             s, k_old = self._pop()
             if s is None:
                 break
@@ -521,8 +551,9 @@ class DStarLite:
 
     def replan(self) -> bool:
         """Recompute the shortest path after cost changes. Returns True if a
-        path from start to goal exists."""
-        self.km += self._heuristic(self.start, self.goal)
+        path from start to goal exists. (Textbook D* Lite: ``km`` is only
+        bumped by the caller when the start moves — see the engine's
+        ``_replan_unit``.)"""
         self.compute_shortest_path()
         self.plans += 1
         return self.rhs.get(self.start, INF) != INF
