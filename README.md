@@ -90,10 +90,72 @@ planners route on the visible cost, and discovery triggers D* Lite replans.
 ## Reproducibility
 
 ```bash
-python -m pytest tests -q        # 55 tests: optimality, CSP backtracks,
-                                 # value-iteration residual, engine invariants
+python -m pytest tests -q        # 105 tests: optimality, CSP backtracks,
+                                 # value-iteration residual, engine invariants,
+                                 # baselines, equity, re-negotiation, benchmark
 python -m pytest tests/test_engine.py -q   # UI contract (snapshot/events/replay)
 ```
+
+## Empirical baseline-comparison study (`run_benchmark.py`)
+
+Every subsystem has an explicit **naive baseline** next to its smart
+algorithm (never replacing it), toggleable per run through the engine
+config `policies` dict:
+
+| subsystem | smart | naive baseline |
+|---|---|---|
+| dispatch | CNP auction | greedy nearest available unit |
+| replanning | D* Lite | full A* rerun per change |
+| idle positioning | MDP value iteration | always return to home station |
+| hospital allocation | CSP | first hospital with a free bed |
+
+```bash
+python run_benchmark.py            # 4 scenarios × 30 seeds × 2 stacks
+python run_benchmark.py --full     # + 4 single-flip ablations (isolates each algorithm)
+python run_benchmark.py --quick    # 1 scenario × 3 seeds (smoke)
+```
+
+Outputs into `benchmark_out/`: `benchmark_results.csv` (every run, one row),
+`benchmark_report.md` (methodology, headline + per-scenario tables, equity
+deep-dive, honest discussion, AI-concept mapping, threats to validity) and
+`charts/*.png` (matplotlib, Agg — headless). Each cell is deterministic for
+a given seed; the harness uses a fixed documented seed schedule, so the
+CSV reproduces bit-for-bit (except wall-clock `runtime_ms`). The web
+dashboard has a smaller **BENCHMARK** button (POST `/benchmark`) that runs
+3 seeds of smart vs naive for the current scenario and renders the summary
+inline — the same `core.benchmark` harness.
+
+Key metric fields: response time (mean/p95/variance), per-zone **Gini
+coefficient** and zone variance, workload spread (max−min unit load),
+distance, replans + D* Lite expansion savings vs a measured full-rerun
+counterfactual, CSP backtracks, MDP solves, CNP re-negotiations and saved
+seconds.
+
+## Fairness / equity metric
+
+Per-zone response times are tracked for every cleared incident (reusing the
+`ZoneMap` zones). `core/metrics.py` computes a Gini-style coefficient over
+per-zone mean response — lower is fairer — plus zone variance, the
+max/min ratio, and best/worst zones. The equity block travels in
+`stats.equity`, is shown in **both** dashboards (web: ZONE FAIRNESS panel
+with heat strip + table; CLI: fairness panel) and is reported per stack in
+the benchmark report (MDP idle positioning vs return-to-station).
+
+## CNP re-negotiation (dynamic task re-allocation)
+
+While a unit is still travelling to its scene, the dispatcher periodically
+re-auctions the contract among currently eligible units
+(`cnp.renog_check_every` ticks). The contract moves **only** when a
+challenger's ETA beats the incumbent's remaining ETA (edge-progress aware)
+by at least `cnp.reassign_penalty_seconds` (default 60 s) — the
+anti-thrash margin — and a per-incident cooldown
+(`renog_cooldown_ticks`) damps churn further. LRTA* urgent contracts and
+greedy-policy runs are exempt. Every re-negotiation is a first-class
+explainability event (`dispatch.renegotiated`) carrying the old/new unit,
+ETAs before/after, penalty and reason; the re-auction itself is a fully
+marked transcript (`dispatch.auction.*` with `renegotiation: true`).
+Totals appear as `renegotiations` / `renegotiation_savings_s` KPIs in both
+UIs.
 
 ## Architecture notes
 
