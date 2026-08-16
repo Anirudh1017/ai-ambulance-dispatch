@@ -30,6 +30,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from core import benchmark as bench
 from core.engine import Engine
 from core.scenarios import scenario_summaries
 
@@ -42,6 +43,23 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.post("/benchmark")
+def run_benchmark(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Small "Run Benchmark" trigger: one scenario × a few seeds × the
+    smart vs naive stacks, aggregated inline for the dashboard. The full
+    study (4 scenarios × 30 seeds × ablations, CSV + Markdown + PNG
+    report) is `run_benchmark.py`; this endpoint is a live preview of the
+    same core.benchmark harness. Sync def -> FastAPI threadpool, so the
+    simulation event loop is never blocked."""
+    scenario = payload.get("scenario") or "downtown-rush"
+    n_seeds = max(1, min(int(payload.get("seeds", 3)), 10))
+    seeds = list(range(1, n_seeds + 1))
+    df = bench.run_benchmark([scenario], seeds)
+    overall = bench.overall(df).to_dict("records")
+    return {"scenario": scenario, "seeds": seeds,
+            "n_runs": len(df), "rows": overall}
 
 
 # --------------------------------------------------------------------------- #

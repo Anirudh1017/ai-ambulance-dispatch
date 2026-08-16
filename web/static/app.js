@@ -1156,6 +1156,41 @@ document.getElementById("btn-replay").onclick = () => {
   send({ action: "replay" });
 };
 
+document.getElementById("btn-benchmark").onclick = async () => {
+  const box = document.getElementById("benchmark-box");
+  const status = document.getElementById("bench-status");
+  const scenario = document.getElementById("scenario").value;
+  status.textContent = "RUNNING…";
+  box.innerHTML =
+    `<div class="text-[#8899b5]">Running ${scenario} × 3 seeds × 2 stacks (6 deterministic runs)…</div>`;
+  try {
+    const res = await fetch("/benchmark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario, seeds: 3 }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || res.statusText);
+    status.textContent = `${data.n_runs} RUNS · SEEDS 1–3`;
+    const rows = data.rows.map((r) => `
+      <div class="flex justify-between items-center py-1 border-b border-[#1e2d4a]/40 last:border-none">
+        <span class="text-[#e2e8f0] font-medium">${r.combo === "smart" ? "SMART" : "NAIVE"}</span>
+        <span class="text-[#8899b5]">resp <b class="text-[#38bdf8]">${r.response_avg.toFixed(1)}s</b>
+          · p95 ${r.response_p95.toFixed(1)}s · var ${r.response_variance.toFixed(0)}
+          · gini <b class="text-[#c084fc]">${r.equity_gini.toFixed(3)}</b>
+          · dist ${r.distance_km.toFixed(0)}km
+          · load spread ${r.workload_spread.toFixed(1)}
+          · reneg ${r.renegotiations.toFixed(0)}</span>
+      </div>`).join("");
+    box.innerHTML = `
+      <div class="text-[10px] text-[#546682] mb-1">mean over ${data.seeds.length} seed(s), scenario ${data.scenario}</div>
+      ${rows}`;
+  } catch (err) {
+    status.textContent = "FAILED";
+    box.innerHTML = `<div class="text-[#f43f5e]">Benchmark failed: ${err.message}</div>`;
+  }
+};
+
 const speed = document.getElementById("speed");
 const paintSpeed = () => {
   const min = +speed.min, max = +speed.max, v = +speed.value;
