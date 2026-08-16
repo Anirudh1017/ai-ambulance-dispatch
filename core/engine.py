@@ -36,6 +36,7 @@ from .dispatch import CnpAuctioneer
 from .graph import RoadNetwork, ZoneMap, build_grid_network
 from .hospital_allocation import HospitalAllocator
 from .mdp import IdlePositioningMDP, MDPResult
+from .metrics import zone_equity
 from .scenarios import DEFAULT_CONFIG, resolve_config
 from .search import (DStarLite, LRTAStar, SearchResult, algorithm_arena,
                      astar, euclidean_heuristic)
@@ -221,10 +222,20 @@ class Engine:
             "incidents_reported": 0, "incidents_cleared": 0,
             "active": 0, "queue": 0,
             "response_times": [], "response_avg": 0.0, "response_p95": 0.0,
+            "response_variance": 0.0,
+            "zone_response_times": {},          # zone -> [response seconds]
+            "equity": {"gini": 0.0, "zone_variance": 0.0,
+                       "per_zone": {}, "served_zones": 0, "zones": 0,
+                       "best_zone": None, "worst_zone": None,
+                       "max_min_ratio": None},
             "total_distance_km": 0.0, "replans": 0, "csp_backtracks": 0,
             "csp_nodes": 0, "csp_solves": 0, "mdp_solves": 0,
             "dispatch_wins": {}, "arena_runs": 0,
+            "renegotiations": 0, "renegotiation_savings_s": 0.0,
+            "policies": {},
             "search_expansions": {"astar": 0, "lrta": 0, "dstar": 0},
+            "replan_full_expansions": 0,
+            "replan_savings_expansions": 0,
         }
         self._event_emit(ev.scenario_started(
             self.tick, self.scenario_name, self.seed,
@@ -578,6 +589,9 @@ class Engine:
         inc.on_scene_tick = self.tick
         response = (self.tick - inc.reported_tick) * self.dt
         self.stats["response_times"].append(response)
+        # per-zone response tracking (fairness/equity metric)
+        zone = self.zones.zone_of_node(inc.node)
+        self.stats["zone_response_times"].setdefault(zone, []).append(response)
         self._ambulance_status_change(amb, "on_scene")
         amb.cancel_route()
         inc.service_remaining = 40.0 + inc.severity * 25.0
@@ -925,9 +939,17 @@ class Engine:
         if rt:
             self.stats["response_avg"] = sum(rt) / len(rt)
             self.stats["response_p95"] = rt[int(0.95 * (len(rt) - 1))]
+            m = sum(rt) / len(rt)
+            self.stats["response_variance"] = \
+                sum((x - m) ** 2 for x in rt) / len(rt)
         else:
             self.stats["response_avg"] = 0.0
             self.stats["response_p95"] = 0.0
+            self.stats["response_variance"] = 0.0
+        # fairness/equity: Gini-style coefficient over per-zone mean
+        # response times, plus the per-zone breakdown for the UIs
+        self.stats["equity"] = zone_equity(self.stats["zone_response_times"],
+                                            [z.id for z in self.zones.zones])
 
     def _incident_list(self) -> List[Incident]:
         """Active (not cleared) incidents plus recent cleared ones."""
