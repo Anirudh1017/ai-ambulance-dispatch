@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMS Dispatch — AI Ambulance Command</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080d1a;
+    --surface: #0d1527;
+    --surface-2: #131f37;
+    --surface-3: #1a2b4c;
+    --line: #1e2d4a;
+    --line-strong: #2a3e66;
+    --text: #e2e8f0;
+    --muted: #8899b5;
+    --dim: #546682;
+    --ops: #38bdf8;
+    --ops-hover: #7dd3fc;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --orange: #fb923c;
+    --alert: #f43f5e;
+    --station: #818cf8;
+    --hospital: #06b6d4;
+  }
+  html { scrollbar-color: #1e2d4a #080d1a; }
+  body {
+    background:
+      radial-gradient(1200px 500px at 70% -10%, rgba(56, 189, 248, 0.04), transparent 60%),
+      radial-gradient(900px 420px at 10% -5%, rgba(129, 140, 248, 0.03), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+  }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .card {
+    background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  }
+  .card-title {
+    font-size: 10px; letter-spacing: 0.18em; font-weight: 700;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #1e2d4a; border-radius: 3px; }
+  .scroll-thin::-webkit-scrollbar-thumb:hover { background: #2a3e66; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+  /* --- buttons --- */
+  .btn {
+    border-radius: 8px; font-weight: 600; letter-spacing: 0.04em;
+    transition: transform 120ms ease, background 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+    cursor: pointer; user-select: none;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:focus-visible { outline: 2px solid var(--ops); outline-offset: 2px; }
+  .btn-primary { background: var(--ops); color: #04131f; font-weight: 700; box-shadow: 0 0 16px rgba(56, 189, 248, 0.25); }
+  .btn-primary:hover { background: var(--ops-hover); box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
+  .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
+  .btn-ghost:hover { background: var(--surface-3); border-color: var(--line-strong); }
+  .btn-amber { background: #d97706; color: #ffffff; font-weight: 700; box-shadow: 0 0 16px rgba(217, 119, 6, 0.25); }
+  .btn-amber:hover { background: #f59e0b; }
+
+  /* --- controls --- */
+  select, input[type="number"] {
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; font-family: "JetBrains Mono", monospace;
+    transition: border-color 150ms ease;
+  }
+  select:hover, input[type="number"]:hover { border-color: var(--line-strong); }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--ops); outline-offset: 1px; border-color: var(--ops); }
+
+  /* --- speed slider --- */
+  input[type="range"].speed {
+    -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--ops) var(--fill, 20%), var(--line) var(--fill, 20%));
+    cursor: pointer;
+  }
+  input[type="range"].speed::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #e2e8f0; border: 3px solid var(--ops);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  }
+  input[type="range"].speed::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #e2e8f0; border: 3px solid var(--ops);
+  }
+
+  /* --- status dot --- */
+  .dot { width: 9px; height: 9px; border-radius: 9999px; }
+  .dot-running { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: blink 1.2s ease-in-out infinite; }
+  .dot-paused  { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+  .dot-finished{ background: var(--ops); box-shadow: 0 0 10px var(--ops); }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .kpi {
+    border-left: 2px solid var(--line);
+    padding: 6px 10px;
+    background: rgba(19, 31, 55, 0.4);
+    border-radius: 0 6px 6px 0;
+    transition: border-left-color 150ms ease, background 150ms ease;
+  }
+  .kpi:hover { border-left-color: var(--ops); background: rgba(19, 31, 55, 0.7); }
+
+  .feed-item { animation: feedin 180ms ease-out; }
+  @keyframes feedin { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot-running, .feed-item { animation: none; }
+  }
+
+  /* --- Strata Layout Styles --- */
+  .layout-strata {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1rem !important;
+  }
+  .layout-strata .stratum-row {
+    width: 100% !important;
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ══════════════════════ Header ══════════════════════ -->
+<header class="sticky top-0 z-40 backdrop-blur-md bg-[#080d1a]/95 border-b border-[#1e2d4a]">
+  <div class="flex items-center gap-3 px-4 h-14 overflow-x-auto scroll-thin flex-nowrap">
+    <!-- brand -->
+    <div class="flex items-center gap-2.5 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="#38bdf8" stroke-width="1.5"/>
+          <path d="M8 4.5v7M4.5 8h7" stroke="#38bdf8" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="leading-tight">
+        <div class="text-sm font-bold tracking-wider text-[#e2e8f0]">EMS DISPATCH</div>
+        <div class="text-[10px] text-[#8899b5] tracking-widest font-medium">CONTROL ROOM · CLASSICAL AI</div>
+      </div>
+    </div>
+
+    <div class="w-px h-8 bg-[#1e2d4a] shrink-0"></div>
+
+    <!-- scenario + seed -->
+    <label class="flex items-center gap-1.5 text-[11px] text-[#8899b5] shrink-0">
+      SCENARIO
+      <select id="scenario" class="px-2 py-1.5 text-xs w-40"></select>
+    </label>
+    <label class="flex items-center gap-1.5 text-[11px] text-[#8899b5] shrink-0">
+      SEED
+      <input id="seed" type="number" value="7" class="px-2 py-1.5 text-xs w-14">
+    </label>
+
+    <!-- fleet summary (fixed straight-line layout) -->
+    <div id="fleet-summary" class="mono flex items-center gap-2 text-[11px] text-[#8899b5] px-2.5 py-1 bg-[#131f37]/60 border border-[#1e2d4a] rounded-lg whitespace-nowrap shrink-0">
+      <span class="text-[#38bdf8] font-bold">—</span> <span class="text-[#8899b5]">units</span> · <span class="text-[#818cf8] font-bold">—</span> <span class="text-[#8899b5]">stations</span> · <span class="text-[#06b6d4] font-bold">—</span> <span class="text-[#06b6d4]">hospitals</span> · <span class="text-[#f43f5e] font-bold">—</span> <span class="text-[#8899b5]">calls</span>
+    </div>
+
+    <div class="flex-1 min-w-[8px]"></div>
+
+    <!-- speed / tickRate -->
+    <label class="flex items-center gap-2 text-[11px] text-[#8899b5] shrink-0">
+      TICK RATE
+      <input id="speed" type="range" min="1" max="40" value="8" class="speed w-24">
+      <span id="speed-val" class="mono text-[11px] text-[#38bdf8] w-9 text-right font-medium">8/s</span>
+    </label>
+    <div class="flex items-center gap-1 shrink-0">
+      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="1">1×</button>
+      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="8">8×</button>
+      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="20">20×</button>
+      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="40">MAX</button>
+    </div>
+
+    <!-- layout view toggle (horizontalStrata) -->
+    <button id="btn-toggle-strata" class="btn btn-ghost px-2.5 py-1.5 text-xs flex items-center gap-1.5 shrink-0" title="Toggle Horizontal Strata View (Layered panoramic layout)">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="2" y="2" width="12" height="3" rx="1"/>
+        <rect x="2" y="6.5" width="12" height="3" rx="1"/>
+        <rect x="2" y="11" width="12" height="3" rx="1"/>
+      </svg>
+      <span class="text-[10px] text-[#8899b5]">VIEW:</span>
+      <span id="strata-mode-label" class="text-[10px] text-[#38bdf8] font-mono">SIDEBAR</span>
+    </button>
+
+    <!-- controls (start button label is START) -->
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="btn-start" class="btn btn-primary px-3.5 py-1.5 text-xs font-bold">START</button>
+      <button id="btn-pause" class="btn btn-amber px-3 py-1.5 text-xs hidden">PAUSE</button>
+      <button id="btn-step" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Advance one tick">STEP</button>
+      <button id="btn-replay" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Replay the run from memory">REPLAY</button>
+      <button id="btn-reset" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Restart the same scenario">RESET</button>
+    </div>
+
+    <!-- clock -->
+    <div class="flex items-center gap-2 shrink-0 pl-1">
+      <div id="status-dot" class="dot dot-paused"></div>
+      <span id="clock" class="mono text-xs text-[#8899b5] bg-[#0d1527] border border-[#1e2d4a] rounded-lg px-2.5 py-1.5 whitespace-nowrap">t 0 · 0s</span>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════ Main Layout ══════════════════════ -->
+<main id="main-layout" class="max-w-[1680px] mx-auto p-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] items-start transition-all duration-200">
+
+  <!-- ── Left column (or Top Strata) ── -->
+  <div id="left-col" class="space-y-4 min-w-0">
+
+    <!-- Map card with rotation control -->
+    <section class="card relative overflow-hidden">
+      <div class="flex items-center justify-between px-3.5 pt-3 pb-1.5 border-b border-[#1e2d4a]/60">
+        <div class="flex items-center gap-2.5">
+          <div class="card-title">LIVE CITY MAP</div>
+          <span class="text-[10px] text-[#546682] font-mono">ROAD NETWORK</span>
+          
+          <!-- Map Rotation Control -->
+          <button id="btn-rotate-map" class="btn btn-ghost px-2 py-0.5 text-[9.5px] mono flex items-center gap-1 text-[#8899b5] hover:text-[#e2e8f0] border border-[#1e2d4a]" title="Rotate map 90° for optimal screen fit">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M2 8a6 6 0 1 0 2-4.5L1 6"/>
+              <path d="M1 2v4h4"/>
+            </svg>
+            <span>ROTATE:</span>
+            <span id="rotation-label" class="text-[#38bdf8] font-bold">0°</span>
+          </button>
+        </div>
+        <div id="sim-name" class="mono text-[11px] text-[#8899b5]">—</div>
+      </div>
+      <div id="map-shell" class="relative min-h-[460px] h-[520px] md:h-[580px] lg:h-[620px] bg-[#070b16]">
+        <canvas id="map" class="absolute inset-0 w-full h-full"></canvas>
+        <div id="map-hint" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div class="mono text-[11px] text-[#546682] tracking-widest bg-[#0d1527]/80 px-4 py-2 rounded border border-[#1e2d4a]">ESTABLISHING TELEMETRY LINK…</div>
+        </div>
+        
+        <!-- Hover tooltip -->
+        <div id="hover-info" class="mono absolute top-3 left-3 bg-[#0d1527]/95 backdrop-blur border border-[#1e2d4a] rounded-lg px-3.5 py-2.5 text-[11px] hidden shadow-2xl z-20 pointer-events-none max-w-xs"></div>
+        
+        <!-- Interactive Vector Legend -->
+        <div id="legend" class="absolute bottom-3 right-3 bg-[#0d1527]/95 backdrop-blur border border-[#1e2d4a] rounded-lg text-[10px] shadow-2xl z-20 transition-all duration-200">
+          <div class="flex items-center justify-between px-3 py-2 border-b border-[#1e2d4a]/80 bg-[#131f37]/40 rounded-t-lg gap-3">
+            <div class="flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" class="text-[#38bdf8]">
+                <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="8" cy="8" r="2" fill="currentColor"/>
+              </svg>
+              <span class="font-bold text-[#8899b5] tracking-wider">MAP SYMBOLS</span>
+            </div>
+            <button id="btn-toggle-legend" class="btn btn-ghost px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider text-[#8899b5] hover:text-[#e2e8f0]" title="Toggle legend visibility">
+              <span id="legend-toggle-label">HIDE</span>
+            </button>
+          </div>
+          
+          <div id="legend-content" class="p-3 space-y-2.5 max-h-[360px] overflow-y-auto scroll-thin">
+            <!-- Facilities Section -->
+            <div>
+              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">FACILITIES</div>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                <div class="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 20 20" class="shrink-0">
+                    <path d="M2 9 L10 2 L18 9" fill="#818cf8" stroke="#4338ca" stroke-width="1.2" stroke-linejoin="round"/>
+                    <rect x="3" y="9" width="14" height="9" rx="1" fill="#818cf8" stroke="#4338ca" stroke-width="1.2"/>
+                    <rect x="7" y="11" width="6" height="7" rx="0.5" fill="#312e81"/>
+                    <line x1="7" y1="13" x2="13" y2="13" stroke="#6366f1" stroke-width="0.8"/>
+                    <line x1="7" y1="15" x2="13" y2="15" stroke="#6366f1" stroke-width="0.8"/>
+                  </svg>
+                  <div>
+                    <div class="text-[#e2e8f0] font-medium leading-none">Station</div>
+                    <div class="text-[9px] text-[#8899b5]">Ambulance Garage</div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 20 20" class="shrink-0">
+                    <rect x="2" y="2" width="16" height="16" rx="3" fill="#06b6d4" stroke="#0891b2" stroke-width="1.2"/>
+                    <path d="M10 5.5 v9 M5.5 10 h9" stroke="#ffffff" stroke-width="2.6" stroke-linecap="square"/>
+                  </svg>
+                  <div>
+                    <div class="text-[#e2e8f0] font-medium leading-none">Hospital</div>
+                    <div class="text-[9px] text-[#06b6d4] font-medium">Medical Beds (CSP)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Incidents Section -->
+            <div class="border-t border-[#1e2d4a]/60 pt-2">
+              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">CALL SEVERITY</div>
+              <div class="grid grid-cols-3 gap-x-2 gap-y-1">
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
+                    <polygon points="10,3 18,17 2,17" fill="#fbbf24" stroke="#080d1a" stroke-width="1.2"/>
+                  </svg>
+                  <span class="text-[#fbbf24]">Sev 3</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
+                    <polygon points="10,2 18,10 10,18 2,10" fill="#fb923c" stroke="#080d1a" stroke-width="1.2"/>
+                  </svg>
+                  <span class="text-[#fb923c]">Sev 4</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
+                    <polygon points="10,3 12.2,7.5 17.2,8.2 13.6,11.7 14.5,16.7 10,14.3 5.5,16.7 6.4,11.7 2.8,8.2 7.8,7.5" fill="#f43f5e" stroke="#080d1a" stroke-width="1"/>
+                  </svg>
+                  <span class="text-[#f43f5e]">Sev 5 ★</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fleet Status Section -->
+            <div class="border-t border-[#1e2d4a]/60 pt-2">
+              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">FLEET UNITS</div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[9.5px]">
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#94a3b8" stroke="#080d1a" stroke-width="2"/></svg>
+                  <span class="text-[#94a3b8]">Idle / Parked</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#22d3ee" stroke="#080d1a" stroke-width="2"/></svg>
+                  <span class="text-[#22d3ee]">Drifting (MDP)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="8" fill="none" stroke="#34d399" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#34d399"/></svg>
+                  <span class="text-[#34d399]">En Route</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#fbbf24" stroke="#080d1a" stroke-width="2"/></svg>
+                  <span class="text-[#fbbf24]">On Scene</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="8" fill="none" stroke="#a78bfa" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#a78bfa"/></svg>
+                  <span class="text-[#a78bfa]">Transporting</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#fb923c" stroke="#080d1a" stroke-width="2"/></svg>
+                  <span class="text-[#fb923c]">Returning</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#f43f5e" stroke="#080d1a" stroke-width="2"/></svg>
+                  <span class="text-[#f43f5e]">Blocked</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Roads & Blockages Section -->
+            <div class="border-t border-[#1e2d4a]/60 pt-2">
+              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">ROAD NETWORK & HAZARDS</div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[9.5px]">
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#1c2a44" stroke-width="2.5"/><circle cx="3" cy="8" r="1.5" fill="#546682"/><circle cx="17" cy="8" r="1.5" fill="#546682"/></svg>
+                  <span class="text-[#8899b5]">Road Edge</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#38bdf8" stroke-width="2" stroke-dasharray="3 2"/></svg>
+                  <span class="text-[#38bdf8]">Active Route</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#fb923c" stroke-width="2.5"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="#fb923c" stroke-width="1.8"/></svg>
+                  <span class="text-[#fb923c]">Known Blockage</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#64748b" stroke-width="2" stroke-dasharray="3 2"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="#64748b" stroke-width="1.5"/></svg>
+                  <span class="text-[#64748b]">Hidden Blockage</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KPIs -->
+    <section class="card p-3.5">
+      <div class="flex items-center justify-between mb-2.5">
+        <div class="card-title">CITY TELEMETRY</div>
+        <span class="text-[10px] text-[#546682] font-mono">REAL-TIME DISPATCH METRICS</span>
+      </div>
+      <div id="stats-cards" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+    </section>
+
+    <!-- AI modules -->
+    <section class="card p-3.5">
+      <div class="flex items-center justify-between mb-3 border-b border-[#1e2d4a]/60 pb-2">
+        <div class="card-title">AI MODULES — CLASSICAL METHODS ONLY</div>
+        <span class="text-[10px] text-[#38bdf8] font-mono tracking-wider">A* · CSP · MDP · CNP · D* LITE</span>
+      </div>
+      <div id="ai-modules-grid" class="grid gap-4 lg:grid-cols-2">
+        <div>
+          <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1.5">SEARCH EXPANSIONS</h3>
+          <div id="expansion-bars" class="space-y-1.5 mb-3 bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60"></div>
+          <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1.5">MODULE COUNTERS</h3>
+          <div id="module-counters" class="mono text-[11px] text-[#8899b5] space-y-1.5 bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60"></div>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1">ALGORITHM ARENA — INFORMED vs UNINFORMED</h3>
+            <div id="arena-box" class="mono text-[11px] bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60 min-h-[100px]"></div>
+          </div>
+          <div>
+            <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1">IDLE POSITIONING — MDP VALUE ITERATION</h3>
+            <div id="mdp-box" class="mono text-[11px] bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60 min-h-[90px]"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── Right column (or Bottom Strata) ── -->
+  <div id="right-col" class="space-y-4 min-w-0">
+
+    <!-- Live decisions -->
+    <section class="card p-3.5">
+      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
+        <div class="card-title">RECENT DECISIONS</div>
+        <span class="mono text-[10px] text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30" id="dec-count">0</span>
+      </div>
+      <div id="decisions" class="mono text-[11px] space-y-1.5 max-h-[320px] overflow-y-auto scroll-thin pr-1"></div>
+    </section>
+
+    <!-- Event stream -->
+    <section class="card p-3.5">
+      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
+        <div class="card-title">EVENT STREAM</div>
+        <span class="mono text-[10px] text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30" id="evt-count">0</span>
+      </div>
+      <div id="events" class="mono text-[11px] space-y-1.5 max-h-[420px] overflow-y-auto scroll-thin pr-1"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="max-w-[1680px] mx-auto px-4 pb-6">
+  <div class="mono text-[10px] text-[#546682] border-t border-[#1e2d4a] pt-3 flex flex-wrap items-center justify-between gap-2">
+    <div>SIMULATION OF CLASSICAL AI — A* / DIJKSTRA / GBFS / BFS · LRTA* · D* LITE · CNP AUCTIONS · CSP BED ALLOCATION · MDP IDLE POSITIONING. NO MACHINE LEARNING.</div>
+    <div class="text-[#8899b5]">EMS COMMAND DASHBOARD v2.0</div>
+  </div>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
