@@ -56,7 +56,13 @@ const SEVERITY_COLOR = { 3: "#fbbf24", 4: "#fb923c", 5: "#f43f5e" };
 const KIND_BADGE = {
   "ambulance.dispatched": "bg-emerald-950/80 text-emerald-300 border border-emerald-800/60",
   "dispatch.auction.award": "bg-teal-950/80 text-teal-300 border border-teal-800/60",
+  "dispatch.auction.announce": "bg-teal-950/60 text-teal-300/90 border border-teal-800/50",
+  "dispatch.auction.bid": "bg-teal-950/40 text-teal-200/80 border border-teal-800/40",
+  "dispatch.auction.reject": "bg-rose-950/40 text-rose-300/80 border border-rose-800/40",
+  "dispatch.greedy": "bg-lime-950/80 text-lime-300 border border-lime-800/60",
+  "dispatch.renegotiated": "bg-fuchsia-950/80 text-fuchsia-300 border border-fuchsia-800/60",
   "ambulance.replanned": "bg-sky-950/80 text-sky-300 border border-sky-800/60",
+  "replan.cost_compare": "bg-sky-950/50 text-sky-300/80 border border-sky-800/40",
   "ambulance.on_scene": "bg-amber-950/80 text-amber-300 border border-amber-800/60",
   "hospital.allocated": "bg-cyan-950/80 text-cyan-300 border border-cyan-800/60",
   "incident.cleared": "bg-indigo-950/80 text-indigo-300 border border-indigo-800/60",
@@ -863,7 +869,17 @@ function renderStats(snap) {
     statCard("RESP AVG", `${st.response_avg.toFixed(1)}s`, "text-[#38bdf8]") +
     statCard("RESP P95", `${st.response_p95.toFixed(1)}s`) +
     statCard("DISTANCE", `${st.total_distance_km.toFixed(0)} km`) +
-    statCard("REPLANS", st.replans, "text-[#818cf8]");
+    statCard("REPLANS", st.replans, "text-[#818cf8]") +
+    statCard("EQUITY GINI",
+      st.equity?.gini != null ? st.equity.gini.toFixed(3) : "—",
+      "text-[#c084fc]") +
+    statCard("REPLAN SAVED",
+      `${st.replan_savings_expansions ?? 0} exp`, "text-[#38bdf8]") +
+    statCard("RENEGOTIATED", st.renegotiations ?? 0, "text-[#e879f9]") +
+    statCard("RENEG SAVED",
+      `${(st.renegotiation_savings_s ?? 0).toFixed(0)}s`, "text-[#e879f9]");
+
+  renderFairness(snap);
 
   const ex = st.search_expansions;
   const maxExp = Math.max(1, ...Object.values(ex));
@@ -883,6 +899,42 @@ function renderStats(snap) {
       <b class="text-[#818cf8]">${st.csp_nodes}</b> nodes</div>
     <div>MDP <b class="text-[#38bdf8]">${st.mdp_solves}</b> solves</div>
     <div>Arena <b class="text-[#34d399]">${st.arena_runs}</b> runs</div>`;
+}
+
+function renderFairness(snap) {
+  const box = document.getElementById("fairness-box");
+  const eq = snap.stats?.equity;
+  if (!eq || !eq.per_zone || !Object.keys(eq.per_zone).length) {
+    box.innerHTML =
+      `<div class="text-[#546682] text-[10px] py-3 text-center">No zone response data yet…</div>`;
+    return;
+  }
+  const rows = Object.entries(eq.per_zone)
+    .map(([z, m]) => ({ z, ...m }))
+    .sort((a, b) => (a.mean || 0) - (b.mean || 0));
+  const maxMean = Math.max(1, ...rows.map((r) => r.mean || 0));
+  const best = eq.best_zone, worst = eq.worst_zone;
+  const heatColor = (t) => `hsl(${Math.round(125 * (1 - t))}, 62%, 32%)`;
+  const heat = rows.map((r) => `
+      <div class="flex-1 h-5 rounded-[4px] flex items-center justify-center text-[8px] mono font-bold"
+        style="background:${heatColor((r.mean || 0) / maxMean)}" title="${r.z}: ${r.mean}s mean · ${r.n} calls">
+        ${r.z}
+      </div>`).join("");
+  const list = rows.map((r) => {
+    const tag = r.z === best ? `<span class="text-[#34d399] font-bold"> BEST</span>`
+      : r.z === worst ? `<span class="text-[#f43f5e] font-bold"> WORST</span>` : "";
+    return `<div class="flex justify-between items-center text-[10px] py-0.5 border-b border-[#1e2d4a]/40 last:border-none">
+        <span class="text-[#e2e8f0] font-medium">${r.z}${tag}</span>
+        <span class="text-[#8899b5]">${r.n} call(s) · ${r.mean}s mean · ${r.p95}s p95</span>
+      </div>`;
+  }).join("");
+  box.innerHTML = `
+    <div class="flex items-center justify-between py-0.5">
+      <span class="text-[#c084fc] font-bold">Gini ${eq.gini.toFixed(3)}</span>
+      <span class="text-[#8899b5]">served ${eq.served_zones}/${eq.zones} zone(s) · max/min ${eq.max_min_ratio != null ? eq.max_min_ratio.toFixed(2) : "—"}×</span>
+    </div>
+    <div class="flex gap-0.5 py-1">${heat}</div>
+    ${list}`;
 }
 
 function renderExplainability(snap) {
