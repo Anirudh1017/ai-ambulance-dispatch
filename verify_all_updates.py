@@ -61,34 +61,11 @@ def verify():
             assert bounds["minY"] >= 20, f"Clipped on top: {bounds['minY']}"
             assert bounds["maxY"] <= bounds["shellH"] - 20, f"Clipped on bottom: {bounds['maxY']} vs {bounds['shellH']}"
 
-        # 6. Test Horizontal Strata View Toggle
-        strata_label = page.inner_text("#strata-mode-label")
-        print("Initial strata mode label:", strata_label)
-        assert strata_label == "SIDEBAR"
-
-        # Toggle to STRATA
-        page.click("#btn-toggle-strata")
-        time.sleep(0.5)
-        strata_label_after = page.inner_text("#strata-mode-label")
-        print("After toggle -> strata mode label:", strata_label_after)
-        assert strata_label_after == "STRATA"
-        has_strata_class = page.evaluate("() => document.getElementById('main-layout').classList.contains('layout-strata')")
-        assert has_strata_class is True
-        stored_mode = page.evaluate("() => localStorage.getItem('ems_strata_mode')")
-        assert stored_mode == "strata"
-
-        # Reload to test persistence
-        page.reload()
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
-        assert page.inner_text("#strata-mode-label") == "STRATA"
-        assert page.evaluate("() => document.getElementById('main-layout').classList.contains('layout-strata')") is True
-
-        # Toggle back to SIDEBAR
-        page.click("#btn-toggle-strata")
-        time.sleep(0.5)
-        assert page.inner_text("#strata-mode-label") == "SIDEBAR"
-        assert page.evaluate("() => document.getElementById('main-layout').classList.contains('layout-strata')") is False
+        # 6. Strata toggle removed (dead control — layout is permanently single-column
+        # since the Command/Analyze tab restructure, so the toggle was a visual no-op)
+        assert page.evaluate("() => !document.getElementById('btn-toggle-strata')")
+        assert page.evaluate("() => !document.getElementById('strata-mode-label')")
+        print("Strata control absent as intended")
 
         # 7. Test tick rate performance after 50 ticks
         clock_text = page.inner_text("#clock")
