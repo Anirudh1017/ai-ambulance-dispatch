@@ -1,0 +1,978 @@
+/* ==========================================================================
+   FOAI — "Wow" feature layer (additive, never edits app styles)
+   Tokens only: hex appears solely in --wow-pos / --wow-neg (dual-tone).
+   Every other colour is var() with an rgb() fallback so the layer renders
+   even before style.css has loaded or when a token is missing.
+   ========================================================================== */
+
+:root {
+  --wow-pos: #34d399;
+  --wow-neg: #f43f5e;
+
+  --wow-bg: var(--bg, rgb(14, 16, 19));
+  --wow-surface: var(--surface, rgb(22, 25, 29));
+  --wow-surface-2: var(--surface-2, rgb(33, 37, 43));
+  --wow-surface-3: var(--surface-3, rgb(43, 48, 56));
+  --wow-line: var(--line, var(--border, rgb(40, 45, 53)));
+  --wow-line-strong: var(--line-strong, var(--border-strong, rgb(61, 68, 79)));
+  --wow-text: var(--text, rgb(247, 248, 249));
+  --wow-muted: var(--muted, rgb(167, 176, 188));
+  --wow-dim: var(--dim, rgb(109, 119, 133));
+  --wow-ops: var(--ops, var(--ink, rgb(247, 248, 249)));
+  --wow-ok: var(--ok, rgb(52, 211, 153));
+  --wow-warn: var(--warn, rgb(251, 191, 36));
+  --wow-alert: var(--alert, rgb(244, 63, 94));
+  --wow-fair: rgb(192, 132, 252);
+  --wow-station: var(--station, rgb(129, 140, 248));
+  --wow-hospital: var(--hospital, rgb(6, 182, 212));
+
+  --wow-radius: var(--radius, 10px);
+  --wow-radius-sm: var(--radius-sm, 6px);
+  --wow-font-ui: var(--font-ui, system-ui, sans-serif);
+  --wow-font-mono: var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace);
+  --wow-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.28));
+}
+
+/* Light theme: same dual-tone semantics, darkened for contrast on white.
+   Everything else flows from style.css tokens (--bg, --surface, --text…). */
+html[data-theme="light"] {
+  --wow-pos: #059669;
+  --wow-neg: #e11d48;
+  --wow-fair: #7c3aed;
+  --wow-ok: #059669;
+  --wow-alert: #e11d48;
+  --wow-warn: #b45309;
+}
+
+/* --------------------------------------------------------------------------
+   Panels & shared chrome
+   -------------------------------------------------------------------------- */
+
+.wow-panel {
+  background: var(--wow-surface);
+  border: 1px solid var(--wow-line);
+  border-radius: var(--wow-radius);
+  padding: 14px;
+  font-family: var(--wow-font-mono);
+}
+
+.wow-panel__title {
+  font-family: var(--wow-font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wow-dim);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wow-dim {
+  color: var(--wow-dim);
+  font-size: 11px;
+}
+
+.wow-btn {
+  font-family: var(--wow-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wow-text);
+  background: var(--wow-surface-2);
+  border: 1px solid var(--wow-line-strong);
+  border-radius: var(--wow-radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.wow-btn:hover {
+  background: var(--wow-surface-3);
+}
+
+.wow-btn:focus-visible {
+  outline: 2px solid var(--wow-ops);
+  outline-offset: 2px;
+}
+
+.wow-btn--shrink {
+  padding: 4px 8px;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+/* Ensure secondary rail buttons sharing .wow-btn retain single rounded-square sidebar styling */
+.edge-sidebar .sidebar-btn.wow-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  color: var(--text-2);
+  min-height: 44px;
+  height: 44px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.edge-sidebar .sidebar-btn.wow-btn:hover {
+  background: transparent;
+}
+.edge-sidebar:hover .sidebar-btn.wow-btn:hover,
+.edge-sidebar:focus-within .sidebar-btn.wow-btn:hover {
+  background: var(--surface-2);
+}
+.edge-sidebar:hover .sidebar-btn.wow-btn,
+.edge-sidebar:focus-within .sidebar-btn.wow-btn {
+  justify-content: flex-start;
+  padding: 0 4px;
+}
+.edge-sidebar.is-collapsed .sidebar-btn.wow-btn {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+/* Generic hook slot + the HUD row used when phase/sound are auto-created
+   (the documented markup ships them inline in index.html instead). */
+.wow-slot {
+  display: block;
+}
+
+.wow-slot--hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.wow-slot--hud .wow-phase {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* --------------------------------------------------------------------------
+   1. Scenario story cards (Symmetrical 3+3 / 2+2+2 grid, never 5+1 orphan)
+   -------------------------------------------------------------------------- */
+
+#wow-story-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  #wow-story-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  #wow-story-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wow-card {
+  background: var(--wow-surface);
+  border: 1px solid var(--wow-line);
+  border-radius: var(--wow-radius);
+  padding: 10px 12px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.wow-card:hover {
+  border-color: var(--wow-line-strong);
+  transform: translateY(-1px);
+}
+
+.wow-card:focus-visible {
+  outline: 2px solid var(--wow-ops);
+  outline-offset: 2px;
+}
+
+.wow-card.is-active {
+  border-color: var(--wow-ops);
+  background: var(--wow-surface-2);
+}
+
+.wow-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.wow-card__title {
+  font-family: var(--wow-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--wow-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wow-card__id {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--wow-dim);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.wow-card__desc {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--wow-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Full description revealed behind hover/focus/expand only */
+.wow-card__detail {
+  display: none;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--wow-text);
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  background: var(--wow-surface-3);
+  border-radius: var(--wow-radius-sm);
+}
+
+.wow-card:hover .wow-card__desc,
+.wow-card:focus-within .wow-card__desc {
+  display: none;
+}
+
+.wow-card:hover .wow-card__detail,
+.wow-card:focus-within .wow-card__detail {
+  display: block;
+}
+
+.wow-card__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding-top: 4px;
+}
+
+.wow-card__meta-item {
+  background: var(--wow-surface-2);
+  border-radius: var(--wow-radius-sm);
+  padding: 3px 4px;
+  text-align: center;
+}
+
+.wow-card__meta-item dt {
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  color: var(--wow-dim);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.wow-card__meta-item dd {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--wow-ops);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   2. Live incident ticker (Single short line each, padding >= 8px)
+   -------------------------------------------------------------------------- */
+
+#wow-ticker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.wow-ticker__empty {
+  color: var(--wow-dim);
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
+.wow-ticker__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  padding: 8px 10px; /* row padding >= 8px */
+  border-left: 2px solid var(--wow-dim);
+  background: var(--wow-surface-2);
+  border-radius: 0 var(--wow-radius-sm) var(--wow-radius-sm) 0;
+  cursor: default;
+  white-space: nowrap;
+  line-height: 1.4;
+  outline: none;
+  animation: wow-fade-in 180ms ease-out;
+}
+
+.wow-ticker__item:focus-visible {
+  outline: 2px solid var(--wow-ops);
+  outline-offset: 1px;
+}
+
+.wow-ticker__item.is-fresh {
+  outline: 1px solid var(--wow-line-strong);
+  outline-offset: -1px;
+}
+
+.wow-ticker__t {
+  width: 32px;
+  flex-shrink: 0;
+  color: var(--wow-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.wow-ticker__summary {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--wow-text);
+  font-weight: 500;
+}
+
+.wow-ticker__age {
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+  color: var(--wow-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+}
+
+.wow-tone-alert {
+  border-left-color: var(--wow-alert);
+}
+.wow-tone-alert .wow-ticker__summary {
+  color: var(--wow-alert);
+}
+.wow-tone-warn {
+  border-left-color: var(--wow-warn);
+}
+.wow-tone-warn .wow-ticker__summary {
+  color: var(--wow-warn);
+}
+.wow-tone-good {
+  border-left-color: var(--wow-pos);
+}
+.wow-tone-good .wow-ticker__summary {
+  color: var(--wow-pos);
+}
+.wow-tone-ops {
+  border-left-color: var(--wow-ops);
+}
+.wow-tone-med {
+  border-left-color: var(--wow-fair);
+}
+.wow-tone-med .wow-ticker__summary {
+  color: var(--wow-fair);
+}
+.wow-tone-info {
+  border-left-color: var(--wow-dim);
+}
+
+/* --------------------------------------------------------------------------
+   3. Hospital load bars (Compact name + occupancy bar + n/beds, padding >= 8px)
+   -------------------------------------------------------------------------- */
+
+#wow-hospital-loads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wow-load {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px; /* row padding >= 8px */
+  background: var(--wow-surface-2);
+  border-radius: var(--wow-radius-sm);
+  border: 1px solid var(--wow-line);
+  font-size: 11px;
+  outline: none;
+}
+
+.wow-load:focus-visible {
+  outline: 2px solid var(--wow-ops);
+  outline-offset: 1px;
+}
+
+.wow-load__name {
+  width: 130px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--wow-text);
+}
+
+.wow-load__track {
+  flex: 1;
+  height: 6px;
+  background: var(--wow-surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.wow-load__fill {
+  height: 100%;
+  background: var(--wow-ok);
+  border-radius: 999px;
+  transition: width 200ms ease-out, background 200ms ease-out;
+}
+
+.wow-load--high .wow-load__fill {
+  background: var(--wow-warn);
+}
+
+.wow-load--full .wow-load__fill {
+  background: var(--wow-neg);
+}
+
+.wow-load__num {
+  font-size: 11px;
+  color: var(--wow-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 58px;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   4 + 10. KPI sparkline & Gini canvases
+   -------------------------------------------------------------------------- */
+
+#wow-spark-kpi,
+#wow-gini {
+  display: block;
+  width: 100%;
+  height: 78px;
+}
+
+#gini-count,
+#wow-gini-val {
+  font-family: var(--wow-font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   5. Unit trails overlay
+   -------------------------------------------------------------------------- */
+
+#wow-trails {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* --------------------------------------------------------------------------
+   6. Blockage reveal pulse
+   -------------------------------------------------------------------------- */
+
+#wow-blockage-flash {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+  padding: 7px 14px;
+  border: 1px solid var(--wow-alert);
+  border-radius: var(--wow-radius-sm);
+  background: var(--wow-bg);
+  box-shadow: var(--wow-shadow);
+  font-family: var(--wow-font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--wow-alert);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+#wow-blockage-flash.is-live {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  animation: wow-pulse 700ms ease-out 2;
+}
+
+@keyframes wow-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(244, 63, 94, 0);
+  }
+}
+
+@keyframes wow-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   7. Benchmark delta table
+   -------------------------------------------------------------------------- */
+
+.wow-delta__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.wow-delta__title {
+  font-family: var(--wow-font-ui);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--wow-text);
+}
+
+.wow-delta__meta {
+  font-size: 9.5px;
+  color: var(--wow-dim);
+}
+
+.wow-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--wow-font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wow-table th,
+.wow-table td {
+  text-align: right;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--wow-line);
+  white-space: nowrap;
+}
+
+.wow-table th:first-child,
+.wow-table td:first-child {
+  text-align: left;
+}
+
+.wow-table thead th {
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--wow-dim);
+  font-weight: 700;
+}
+
+.wow-table tbody th {
+  color: var(--wow-muted);
+  font-weight: 600;
+}
+
+.wow-table tbody td {
+  color: var(--wow-text);
+}
+
+.wow-table tbody td b {
+  color: var(--wow-ops);
+}
+
+.wow-chip {
+  display: inline-block;
+  min-width: 52px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.wow-chip--pos {
+  color: var(--wow-pos);
+  background: rgba(52, 211, 153, 0.14);
+  background: color-mix(in srgb, var(--wow-pos) 14%, transparent);
+}
+
+.wow-chip--neg {
+  color: var(--wow-neg);
+  background: rgba(244, 63, 94, 0.14);
+  background: color-mix(in srgb, var(--wow-neg) 14%, transparent);
+}
+
+.wow-chip--flat {
+  color: var(--wow-dim);
+  background: var(--wow-surface-2);
+}
+
+/* --------------------------------------------------------------------------
+   8. Replay scrubber
+   -------------------------------------------------------------------------- */
+
+#wow-replay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#wow-replay-label {
+  font-size: 10.5px;
+  color: var(--wow-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.wow-replay__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#wow-replay-slider {
+  flex: 1;
+  accent-color: var(--wow-ops);
+  height: 4px;
+}
+
+#wow-replay-rate {
+  font-family: var(--wow-font-mono);
+  font-size: 10px;
+  color: var(--wow-text);
+  background: var(--wow-surface-2);
+  border: 1px solid var(--wow-line-strong);
+  border-radius: var(--wow-radius-sm);
+  padding: 4px 6px;
+}
+
+/* --------------------------------------------------------------------------
+   9. Export PNG, summary card, print
+   -------------------------------------------------------------------------- */
+
+.wow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#wow-summary-card {
+  font-family: var(--wow-font-mono);
+}
+
+.wow-summary__title {
+  font-family: var(--wow-font-ui);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--wow-text);
+  margin-bottom: 8px;
+}
+
+.wow-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.wow-summary__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dotted var(--wow-line);
+  padding: 3px 0;
+}
+
+.wow-summary__row dt {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--wow-dim);
+}
+
+.wow-summary__row dd {
+  margin: 0;
+  font-size: 11px;
+  color: var(--wow-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   11. Story HUD phase banners
+   -------------------------------------------------------------------------- */
+
+#wow-phase {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: var(--wow-radius-sm);
+  border: 1px solid var(--wow-line);
+  background: var(--wow-surface-2);
+  font-family: var(--wow-font-mono);
+  transition: border-color 240ms ease, background 240ms ease;
+}
+
+.wow-phase-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: var(--wow-radius-sm);
+  border: 1px solid var(--wow-line);
+  background: var(--wow-surface-2);
+  font-family: var(--wow-font-mono);
+  transition: border-color 240ms ease, background 240ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wow-phase-indicator__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wow-dim);
+  flex-shrink: 0;
+  transition: background 240ms ease, box-shadow 240ms ease;
+}
+
+.wow-phase-indicator__label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--wow-text);
+}
+
+.wow-phase-indicator__metrics {
+  font-size: 10.5px;
+  color: var(--wow-muted);
+}
+
+.wow-phase-indicator--deploy .wow-phase-indicator__dot,
+.wow-phase-indicator--respond .wow-phase-indicator__dot {
+  background: var(--wow-ops);
+  box-shadow: 0 0 6px var(--wow-ops);
+}
+
+.wow-phase-indicator--surge .wow-phase-indicator__dot {
+  background: var(--wow-warn);
+  box-shadow: 0 0 6px var(--wow-warn);
+}
+
+.wow-phase-indicator--disruption {
+  border-color: var(--wow-alert);
+}
+.wow-phase-indicator--disruption .wow-phase-indicator__dot {
+  background: var(--wow-neg);
+  box-shadow: 0 0 6px var(--wow-neg);
+  animation: wow-blink 900ms steps(2, end) infinite;
+}
+
+.wow-phase-indicator--recovery .wow-phase-indicator__dot {
+  background: var(--wow-fair);
+}
+
+.wow-phase-indicator--complete {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.wow-phase-indicator--complete .wow-phase-indicator__dot {
+  background: var(--wow-pos);
+  box-shadow: 0 0 6px var(--wow-pos);
+}
+.wow-phase-indicator--complete .wow-phase-indicator__label {
+  color: var(--wow-pos);
+}
+
+.wow-phase__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wow-dim);
+  flex-shrink: 0;
+}
+
+.wow-phase__label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--wow-text);
+}
+
+.wow-phase__note {
+  font-size: 10.5px;
+  color: var(--wow-muted);
+  margin-left: auto;
+}
+
+.wow-phase--deploy .wow-phase__dot {
+  background: var(--wow-ops);
+}
+.wow-phase--respond .wow-phase__dot {
+  background: var(--wow-pos);
+}
+.wow-phase--surge .wow-phase__dot {
+  background: var(--wow-warn);
+}
+.wow-phase--disruption {
+  border-color: var(--wow-alert);
+  background: rgba(244, 63, 94, 0.1);
+  background: color-mix(in srgb, var(--wow-neg) 10%, transparent);
+}
+.wow-phase--disruption .wow-phase__dot {
+  background: var(--wow-neg);
+  animation: wow-blink 900ms steps(2, end) infinite;
+}
+.wow-phase--disruption .wow-phase__label {
+  color: var(--wow-alert);
+}
+.wow-phase--recovery .wow-phase__dot {
+  background: var(--wow-fair);
+}
+.wow-phase--complete {
+  border-color: var(--wow-pos);
+}
+.wow-phase--complete .wow-phase__dot {
+  background: var(--wow-pos);
+}
+
+@keyframes wow-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   12. Audio toggle
+   -------------------------------------------------------------------------- */
+
+#wow-audio-toggle.is-on {
+  border-color: var(--wow-pos);
+  color: var(--wow-pos);
+}
+
+/* --------------------------------------------------------------------------
+   Motion & print
+   -------------------------------------------------------------------------- */
+
+/* Reduced motion, twice over: the OS preference (works with no app.js at
+   all) and <html data-motion="reduce"> — the attribute app.js mirrors from
+   the same media query, so a JS-forced reduce also lands here. */
+
+@media (prefers-reduced-motion: reduce) {
+  .wow-card,
+  .wow-load__fill,
+  #wow-blockage-flash,
+  .wow-ticker__item {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .wow-phase--disruption .wow-phase__dot {
+    animation: none;
+  }
+
+  .wow-card:hover {
+    transform: none;
+  }
+
+  #wow-trails {
+    display: none;
+  }
+
+  #wow-blockage-flash.is-live {
+    animation: none;
+    outline: 1px solid var(--wow-alert);
+    outline-offset: 2px;
+  }
+}
+
+[data-motion="reduce"] .wow-card,
+[data-motion="reduce"] .wow-load__fill,
+[data-motion="reduce"] #wow-blockage-flash,
+[data-motion="reduce"] .wow-ticker__item {
+  transition: none !important;
+  animation: none !important;
+}
+
+[data-motion="reduce"] .wow-phase--disruption .wow-phase__dot {
+  animation: none;
+}
+
+[data-motion="reduce"] .wow-card:hover {
+  transform: none;
+}
+
+[data-motion="reduce"] #wow-trails {
+  display: none;
+}
+
+[data-motion="reduce"] #wow-blockage-flash.is-live {
+  animation: none;
+  outline: 1px solid var(--wow-alert);
+  outline-offset: 2px;
+}
+
+@media print {
+  .wow-actions,
+  #wow-replay,
+  #wow-audio-toggle,
+  #wow-ticker {
+    display: none !important;
+  }
+
+  .wow-panel,
+  .wow-card {
+    break-inside: avoid;
+    border-color: rgb(160, 160, 160);
+    background: rgb(255, 255, 255);
+    color: rgb(0, 0, 0);
+  }
+
+  .wow-summary__row dd,
+  .wow-table tbody td {
+    color: rgb(0, 0, 0);
+  }
+}
