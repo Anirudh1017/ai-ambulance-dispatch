@@ -5,6 +5,30 @@ hand-specified classical AI** — no machine learning anywhere in the system.
 Two complete user interfaces (a web dashboard and a terminal dashboard) share
 one tick-based simulation core.
 
+## What this is
+
+A coursework project in classical artificial intelligence, built to demonstrate
+that the *reasoning* is the interesting part, not the model. Every dispatch
+decision is explainable after the fact: the auction transcript, the search
+expansion counts, the CSP backtrack trace and the value-iteration residual are
+all surfaced in the UI rather than hidden behind a prediction.
+
+The central claim is empirical. Each of the four AI subsystems ships with an
+explicit naive baseline, and `run_benchmark.py` runs both stacks across every
+scenario and seed so the algorithms are *measured* against their alternatives
+instead of merely asserted to be better. Notably, the report is honest where
+the results cut against the obvious choice — MDP idle positioning wins in
+incident-sparse scenarios and loses in station-dense ones.
+
+| | |
+|---|---|
+| **Subsystems** | CNP dispatch · A*/D\* Lite routing · CSP hospital allocation · MDP idle positioning |
+| **Interfaces** | FastAPI + WebSocket + Canvas dashboard, and a Textual terminal dashboard |
+| **Tests** | 105 (`python -m pytest tests -q`) |
+| **Dependencies** | fastapi, uvicorn, networkx, textual |
+| **Determinism** | Fully seed-reproducible, decision sequence included |
+| **Changelog** | See [CHANGELOG.md](CHANGELOG.md) |
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                  SIMULATION CORE  (core/)                  │
