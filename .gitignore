@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 *.png
 benchmark_out/
+
+# Runtime / launcher logs (transient, regenerated on every start)
+*.log
