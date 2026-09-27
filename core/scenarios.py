@@ -90,7 +90,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "ambulance_count": 16, "station_count": 4,
         "hospital_count": 4, "zone_count": 8,
         "max_ticks": 1800,
-        "incidents": _auto_incidents(20, start=30, step=70),
+        "incidents": _auto_incidents(20, start=30, step=50),
         "blockages": [
             [260, ("n2_4", "n2_5"), 300, False],   # hidden roadworks
             [420, ("n4_6", "n4_7"), 250, False],
@@ -162,6 +162,114 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
             [200, ("n1_7", "n2_7"), 800, True],
             [500, ("n4_1", "n5_1"), 700, True],
         ],
+    },
+    "chokepoint-catastrophe": {
+        "title": "Chokepoint catastrophe — bridge failures",
+        "description": "A river cuts the city into two districts: every "
+                       "row4→row5 crossing except six bridges is closed "
+                       "water. Mid-run the bridges fail in waves — first "
+                       "without warning, then on the planner's map — and "
+                       "each cut forces D* Lite to repair the routes that "
+                       "were already crossing, while the survivors become "
+                       "the only way across.",
+        "grid_cols": 11, "grid_rows": 9, "cell_km": 0.55,
+        "ambulance_count": 14, "station_count": 4,
+        "hospital_count": 4, "hospital_beds": 4,
+        "zone_count": 8, "max_ticks": 1500,
+        # severity <= 4 by design: no LRTA* real-time contracts, so the
+        # blockage/D* traffic is the only routing stress in this scenario
+        "incidents": _auto_incidents(24, start=30, step=60,
+                                     severities=[4, 3, 3, 2, 4, 3, 2, 4, 3,
+                                                 4, 2, 3, 4, 3, 2, 4, 3, 4,
+                                                 2, 3, 4, 3, 2, 4]),
+        # The river itself: every odd-column row4→row5 crossing is closed
+        # for the whole run (known geography, revealed to planners at t=0),
+        # so the six bridges at cols 0,2,4,6,8,10 are the only way across.
+        # Bridge cuts are timed so >= 1 bridge is always open (the graph
+        # never disconnects) while the crossing set shrinks to a chokepoint.
+        "blockages": (
+            [[0, (f"n4_{c}", f"n5_{c}"), 10 ** 7, True]
+             for c in (1, 3, 5, 7, 9)] +
+            [
+                # early hidden cut — first discoveries before the main event
+                [120, ("n4_0", "n5_0"), 90, False],
+                [120, ("n4_2", "n5_2"), 90, False],
+                # wave 1 — bridges 0/2/4 fail without warning: planners only
+                # learn when a unit reaches the abutment -> D* Lite repair
+                [260, ("n4_0", "n5_0"), 260, False],
+                [260, ("n4_2", "n5_2"), 260, False],
+                [260, ("n4_4", "n5_4"), 260, False],
+                # hidden collapse of the middle bridge while waves 1 runs
+                [420, ("n4_6", "n5_6"), 150, False],
+                # wave 2 — the other side fails, now visible to planners,
+                # so every en-route unit crossing it is repaired in place
+                [600, ("n4_6", "n5_6"), 260, True],
+                [600, ("n4_8", "n5_8"), 260, True],
+                [600, ("n4_10", "n5_10"), 260, True],
+                # hidden flap of bridge 2 inside wave 2
+                [700, ("n4_2", "n5_2"), 120, False],
+                # land-side roadworks keep local routing honest
+                [780, ("n3_3", "n4_3"), 120, False],
+                [900, ("n6_5", "n6_6"), 200, True],
+                # hidden flap of the busy western bridges between waves
+                [950, ("n4_0", "n5_0"), 150, False],
+                [950, ("n4_4", "n5_4"), 150, False],
+                # wave 3 — the busy western bridges fail again, visible
+                [1080, ("n4_0", "n5_0"), 300, True],
+                [1080, ("n4_2", "n5_2"), 300, True],
+                [1080, ("n4_4", "n5_4"), 300, True],
+                # closing hidden flap on the eastern bridge
+                [1250, ("n4_8", "n5_8"), 120, False],
+            ]
+        ),
+    },
+    "hospital-surge": {
+        "title": "Hospital surge — bed capacity crisis",
+        "description": "Clusters of high-severity patients land across "
+                       "every district at once while each hospital holds "
+                       "only two beds: the CSP allocator hits dead ends, "
+                       "backtracks, and pushes patients to hospitals in "
+                       "neighbouring districts to keep the queue moving.",
+        "grid_cols": 12, "grid_rows": 9, "cell_km": 0.6,
+        "ambulance_count": 16, "station_count": 4,
+        "hospital_count": 3, "hospital_beds": 2,
+        "zone_count": 6, "max_ticks": 1800,
+        "csp": {"max_distance_units": 55},   # district-scale domains -> contention
+        "incidents": [
+            # surge 1 — six simultaneous calls
+            [40, 4, "trauma"], [40, 3, "stroke"], [40, 5, "cardiac arrest"],
+            [40, 3, "burn"], [40, 4, "obstetric"], [40, 2, "respiratory distress"],
+            # trickle between surges keeps beds occupied
+            [150, 3, "trauma"], [180, 2, "stroke"],
+            # surge 2
+            [250, 5, "trauma"], [250, 4, "burn"], [250, 5, "stroke"],
+            [250, 3, "obstetric"], [250, 4, "cardiac arrest"], [250, 3, "trauma"],
+            [340, 2, "respiratory distress"],
+            # surge 3
+            [470, 4, "cardiac arrest"], [470, 3, "stroke"], [470, 5, "trauma"],
+            [470, 4, "burn"], [470, 3, "obstetric"], [470, 4, "trauma"],
+            [560, 2, "burn"], [600, 3, "stroke"],
+            # surge 4
+            [700, 5, "cardiac arrest"], [700, 4, "trauma"], [700, 3, "stroke"],
+            [700, 5, "burn"], [700, 4, "obstetric"], [700, 3, "trauma"],
+            [790, 2, "respiratory distress"],
+            # surge 5
+            [900, 4, "trauma"], [900, 5, "cardiac arrest"], [900, 3, "burn"],
+            [900, 4, "stroke"], [900, 3, "obstetric"], [900, 5, "trauma"],
+            [990, 2, "stroke"],
+            # surge 6
+            [1120, 4, "burn"], [1120, 3, "trauma"], [1120, 5, "cardiac arrest"],
+            [1120, 4, "obstetric"], [1120, 3, "stroke"], [1120, 4, "trauma"],
+            [1210, 2, "respiratory distress"],
+            # surge 7 — final wave inside the run horizon
+            [1340, 5, "trauma"], [1340, 4, "cardiac arrest"], [1340, 3, "burn"],
+            [1340, 4, "stroke"], [1340, 3, "obstetric"], [1340, 4, "trauma"],
+            [1430, 2, "burn"], [1500, 3, "stroke"],
+        ],
+        # no scheduled blockages: severity-5 calls use LRTA* real-time
+        # search, which this scenario deliberately leaves un-interfered so
+        # the bed-allocation pressure is the only stressor.
+        "blockages": [],
     },
 }
 

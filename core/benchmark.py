@@ -177,11 +177,11 @@ def aggregate(df: pd.DataFrame,
     means = df.groupby(list(group))[list(AGG_COLUMNS)].mean().round(3)
     stds = df.groupby(list(group))[
         [c for c in AGG_COLUMNS
-         if c not in ("response_variance", "max_min_ratio")]].std().round(3)
+         if c not in ("response_variance", "max_min_ratio")]].std().fillna(0.0).round(3)
     out = means.copy()
     for c in stds.columns:
         out[f"{c}_std"] = stds[c]
-    return out.reset_index()
+    return out.fillna(0.0).reset_index()
 
 
 def overall(df: pd.DataFrame) -> pd.DataFrame:

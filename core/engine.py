@@ -58,13 +58,15 @@ class Hospital:
         self.name = name
         self.beds = beds
         self.in_use = 0
+        self.patients_served = 0
 
     def free_beds(self) -> int:
         return self.beds - self.in_use
 
     def to_dict(self) -> Dict[str, object]:
         return {"id": self.id, "node": self.node, "name": self.name,
-                "beds": self.beds, "in_use": self.in_use}
+                "beds": self.beds, "in_use": self.in_use,
+                "patients_served": self.patients_served}
 
 
 class Station:
@@ -874,6 +876,7 @@ class Engine:
                                              hosp.id, handover))
         self._clear_incident(inc, amb)
         hosp.in_use = max(0, hosp.in_use - 1)
+        hosp.patients_served += 1
 
     def _clear_incident(self, inc: Incident, amb: Ambulance) -> None:
         inc.status = "cleared"
@@ -1203,6 +1206,7 @@ class Engine:
                 - self.stats["search_expansions"]["dstar"]
         else:
             self.stats["replan_savings_expansions"] = 0
+        self.stats["hospitals_completed"] = sum(h.patients_served for h in self.hospitals)
 
     def _incident_list(self) -> List[Incident]:
         """Active (not cleared) incidents plus recent cleared ones."""

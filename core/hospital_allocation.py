@@ -76,6 +76,9 @@ class HospitalAllocator:
         res.variables = [inc.id for inc in incidents]
         res.capacities = {h.id: h.free_beds() for h in hospitals}
 
+        inc_by_id = {inc.id: inc for inc in incidents}
+        hosp_by_id = {h.id: h for h in hospitals}
+
         for inc in incidents:
             dom = []
             for hosp in hospitals:
@@ -83,13 +86,15 @@ class HospitalAllocator:
                     continue
                 if graph.euclidean_distance(inc.node, hosp.node) <= self.max_distance:
                     dom.append(hosp.id)
+            # Order domain values by proximity to this incident
+            dom.sort(key=lambda hid: graph.euclidean_distance(inc.node, hosp_by_id[hid].node))
             res.domains[inc.id] = dom
 
         domains = {v: list(res.domains[v]) for v in res.variables}
         used = {h: 0 for h in res.capacities}
         assignment: Dict[str, str] = {}
 
-        ok = self._backtrack(assignment, used, res, domains)
+        ok = self._backtrack(assignment, used, res, domains, inc_by_id, hosp_by_id, graph)
 
         if not ok and allow_partial:
             # best-effort completion: assign patients to hospitals with
@@ -105,7 +110,9 @@ class HospitalAllocator:
                 ]
                 if not candidates:
                     continue
-                choice = min(candidates)
+                choice = min(candidates,
+                             key=lambda h: graph.euclidean_distance(inc_by_id[var].node,
+                                                                    hosp_by_id[h].node))
                 assignment[var] = choice
                 prov[choice] = prov.get(choice, 0) + 1
             res.feasible = False
@@ -122,7 +129,10 @@ class HospitalAllocator:
     def _backtrack(self, assignment: Dict[str, str],
                    used: Dict[str, int],
                    res: AllocationResult,
-                   domains: Dict[str, List[str]]) -> bool:
+                   domains: Dict[str, List[str]],
+                   inc_by_id: Optional[Dict[str, Any]] = None,
+                   hosp_by_id: Optional[Dict[str, Any]] = None,
+                   graph: Optional[Any] = None) -> bool:
         if len(assignment) == len(res.variables):
             res.nodes_explored += 1
             return True
@@ -134,10 +144,17 @@ class HospitalAllocator:
             res.nodes_explored += 1
             return False
 
-        # ---- LCV: try values that prune the least ----------------------
-        ordered = sorted(domains[var],
-                         key=lambda h: self._prune_impact(h, unassigned,
-                                                          assignment, domains))
+        # ---- LCV: try values that prune the least, tie-break by proximity ----
+        if graph is not None and inc_by_id is not None and hosp_by_id is not None:
+            ordered = sorted(domains[var],
+                             key=lambda h: (self._prune_impact(h, unassigned,
+                                                               assignment, domains),
+                                            graph.euclidean_distance(inc_by_id[var].node,
+                                                                     hosp_by_id[h].node)))
+        else:
+            ordered = sorted(domains[var],
+                             key=lambda h: self._prune_impact(h, unassigned,
+                                                              assignment, domains))
 
         for value in ordered:
             res.nodes_explored += 1
@@ -150,7 +167,8 @@ class HospitalAllocator:
             pruned = self._forward_check(value, unassigned, assignment,
                                          used, res, domains)
             if pruned is not None:
-                if self._backtrack(assignment, used, res, domains):
+                if self._backtrack(assignment, used, res, domains,
+                                   inc_by_id, hosp_by_id, graph):
                     return True
                 self._restore(domains, pruned)
             else:

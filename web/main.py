@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from core import benchmark as bench
@@ -40,9 +41,43 @@ app = FastAPI(title="AI Ambulance Dispatch — Dashboard")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _sanitize_benchmark(data: Any) -> Any:
+    if isinstance(data, float):
+        if math.isnan(data) or math.isinf(data):
+            return 0.0
+        return data
+    elif isinstance(data, dict):
+        return {k: _sanitize_benchmark(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_sanitize_benchmark(v) for v in data]
+    return data
+
+
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/favicon.ico")
+async def favicon() -> Response:
+    return Response(status_code=204)
+
+
+@app.get("/benchmark")
+def get_benchmark(scenario: Optional[str] = None) -> Dict[str, Any]:
+    scen = scenario or "downtown-rush"
+    csv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "benchmark_out", "benchmark_results.csv")
+    if os.path.exists(csv_path):
+        try:
+            import pandas as pd
+            df = pd.read_csv(csv_path)
+            if "scenario" in df.columns and scen in df["scenario"].values:
+                df = df[df["scenario"] == scen]
+                overall = bench.overall(df).to_dict("records")
+                return _sanitize_benchmark({"scenario": scen, "seeds": [1, 2, 3], "n_runs": len(df), "rows": overall})
+        except Exception:
+            pass
+    return run_benchmark({"scenario": scen, "seeds": 3})
 
 
 @app.post("/benchmark")
@@ -58,8 +93,8 @@ def run_benchmark(payload: Dict[str, Any]) -> Dict[str, Any]:
     seeds = list(range(1, n_seeds + 1))
     df = bench.run_benchmark([scenario], seeds)
     overall = bench.overall(df).to_dict("records")
-    return {"scenario": scenario, "seeds": seeds,
-            "n_runs": len(df), "rows": overall}
+    return _sanitize_benchmark({"scenario": scenario, "seeds": seeds,
+                                "n_runs": len(df), "rows": overall})
 
 
 # --------------------------------------------------------------------------- #
@@ -96,15 +131,20 @@ class SimSession:
 
     def pause(self) -> None:
         self.playing = False
+        if self.tick_task and not self.tick_task.done():
+            self.tick_task.cancel()
+        self.tick_task = None
 
     def resume(self) -> None:
-        if self.engine is None or self.tick_task and not self.tick_task.done():
+        if self.engine is None or self.engine.tick >= int(self.engine.cfg["max_ticks"]):
             return
+        if self.tick_task and not self.tick_task.done():
+            self.tick_task.cancel()
         self.playing = True
         self.tick_task = asyncio.create_task(self._tick_loop())
 
     def set_speed(self, tps: float) -> None:
-        self.tps = max(1.0, min(60.0, float(tps)))
+        self.tps = max(1.0, min(120.0, float(tps)))
 
     # -- engine stepping ------------------------------------------------------
     def tick_once(self) -> bool:
@@ -133,14 +173,17 @@ class SimSession:
                              >= int(self.engine.cfg["max_ticks"]))}
 
     async def _tick_loop(self) -> None:
-        while self.playing:
-            finished = self.tick_once()
-            await self._send(self.snapshot_message())
-            if finished:
-                self.playing = False
-                await self._send(self.status_message())
-                return
-            await asyncio.sleep(1.0 / self.tps)
+        try:
+            while self.playing:
+                finished = self.tick_once()
+                await self._send(self.snapshot_message())
+                if finished:
+                    self.playing = False
+                    await self._send(self.status_message())
+                    return
+                await asyncio.sleep(1.0 / self.tps)
+        except asyncio.CancelledError:
+            pass
 
     # -- replay ----------------------------------------------------------------
     async def replay(self) -> None:

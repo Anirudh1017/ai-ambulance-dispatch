@@ -1,468 +1,836 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
+<!-- App theme: set before paint to avoid flash -->
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem('foai_app_theme') || localStorage.getItem('ems_theme');
+      var theme = saved === 'dark' || saved === 'light'
+        ? saved
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      if (localStorage.getItem('ems_legend_visible') === null) {
+        localStorage.setItem('ems_legend_visible', 'false');
+      }
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EMS Dispatch — AI Ambulance Command</title>
+<meta name="description" content="Classical AI emergency dispatch command and analysis dashboard.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1013">
+
+<!-- Tailwind (layout utilities mapped to CSS variables) -->
+<script>
+  tailwind = window.tailwind || {};
+  tailwind.config = {
+    darkMode: ['class', '[data-theme="dark"]'],
+    theme: {
+      extend: {
+        colors: {
+          bg: 'rgb(var(--bg-rgb) / <alpha-value>)',
+          surface: 'rgb(var(--surface-rgb) / <alpha-value>)',
+          'surface-2': 'rgb(var(--surface-2-rgb) / <alpha-value>)',
+          'surface-3': 'rgb(var(--surface-3-rgb) / <alpha-value>)',
+          text: 'rgb(var(--text-rgb) / <alpha-value>)',
+          'text-2': 'rgb(var(--text-2-rgb) / <alpha-value>)',
+          muted: 'rgb(var(--muted-rgb) / <alpha-value>)',
+          dim: 'rgb(var(--dim-rgb) / <alpha-value>)',
+          border: 'rgb(var(--border-rgb) / <alpha-value>)',
+          'border-strong': 'rgb(var(--border-strong-rgb) / <alpha-value>)',
+          'control-border': 'rgb(var(--control-border-rgb) / <alpha-value>)',
+          ink: 'rgb(var(--ink-rgb) / <alpha-value>)',
+          'on-ink': 'rgb(var(--on-ink-rgb) / <alpha-value>)',
+          danger: 'rgb(var(--danger-rgb) / <alpha-value>)',
+        }
+      }
+    }
+  };
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #080d1a;
-    --surface: #0d1527;
-    --surface-2: #131f37;
-    --surface-3: #1a2b4c;
-    --line: #1e2d4a;
-    --line-strong: #2a3e66;
-    --text: #e2e8f0;
-    --muted: #8899b5;
-    --dim: #546682;
-    --ops: #38bdf8;
-    --ops-hover: #7dd3fc;
-    --ok: #34d399;
-    --warn: #fbbf24;
-    --orange: #fb923c;
-    --alert: #f43f5e;
-    --station: #818cf8;
-    --hospital: #06b6d4;
-  }
-  html { scrollbar-color: #1e2d4a #080d1a; }
-  body {
-    background:
-      radial-gradient(1200px 500px at 70% -10%, rgba(56, 189, 248, 0.04), transparent 60%),
-      radial-gradient(900px 420px at 10% -5%, rgba(129, 140, 248, 0.03), transparent 55%),
-      var(--bg);
-    color: var(--text);
-    font-family: "Space Grotesk", system-ui, sans-serif;
-  }
-  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
-  .card {
-    background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-  }
-  .card-title {
-    font-size: 10px; letter-spacing: 0.18em; font-weight: 700;
-    color: var(--muted); text-transform: uppercase;
-  }
-  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-  .scroll-thin::-webkit-scrollbar-thumb { background: #1e2d4a; border-radius: 3px; }
-  .scroll-thin::-webkit-scrollbar-thumb:hover { background: #2a3e66; }
-  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
 
-  /* --- buttons --- */
-  .btn {
-    border-radius: 8px; font-weight: 600; letter-spacing: 0.04em;
-    transition: transform 120ms ease, background 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
-    cursor: pointer; user-select: none;
-  }
-  .btn:active { transform: translateY(1px); }
-  .btn:focus-visible { outline: 2px solid var(--ops); outline-offset: 2px; }
-  .btn-primary { background: var(--ops); color: #04131f; font-weight: 700; box-shadow: 0 0 16px rgba(56, 189, 248, 0.25); }
-  .btn-primary:hover { background: var(--ops-hover); box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
-  .btn-ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
-  .btn-ghost:hover { background: var(--surface-3); border-color: var(--line-strong); }
-  .btn-amber { background: #d97706; color: #ffffff; font-weight: 700; box-shadow: 0 0 16px rgba(217, 119, 6, 0.25); }
-  .btn-amber:hover { background: #f59e0b; }
-
-  /* --- controls --- */
-  select, input[type="number"] {
-    background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
-    border-radius: 8px; font-family: "JetBrains Mono", monospace;
-    transition: border-color 150ms ease;
-  }
-  select:hover, input[type="number"]:hover { border-color: var(--line-strong); }
-  select:focus-visible, input:focus-visible { outline: 2px solid var(--ops); outline-offset: 1px; border-color: var(--ops); }
-
-  /* --- speed slider --- */
-  input[type="range"].speed {
-    -webkit-appearance: none; appearance: none;
-    height: 6px; border-radius: 3px;
-    background: linear-gradient(90deg, var(--ops) var(--fill, 20%), var(--line) var(--fill, 20%));
-    cursor: pointer;
-  }
-  input[type="range"].speed::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 15px; height: 15px; border-radius: 50%;
-    background: #e2e8f0; border: 3px solid var(--ops);
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-  }
-  input[type="range"].speed::-moz-range-thumb {
-    width: 15px; height: 15px; border-radius: 50%;
-    background: #e2e8f0; border: 3px solid var(--ops);
-  }
-
-  /* --- status dot --- */
-  .dot { width: 9px; height: 9px; border-radius: 9999px; }
-  .dot-running { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: blink 1.2s ease-in-out infinite; }
-  .dot-paused  { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
-  .dot-finished{ background: var(--ops); box-shadow: 0 0 10px var(--ops); }
-  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-  .kpi {
-    border-left: 2px solid var(--line);
-    padding: 6px 10px;
-    background: rgba(19, 31, 55, 0.4);
-    border-radius: 0 6px 6px 0;
-    transition: border-left-color 150ms ease, background 150ms ease;
-  }
-  .kpi:hover { border-left-color: var(--ops); background: rgba(19, 31, 55, 0.7); }
-
-  .feed-item { animation: feedin 180ms ease-out; }
-  @keyframes feedin { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dot-running, .feed-item { animation: none; }
-  }
-
-  /* --- Strata Layout Styles --- */
-  .layout-strata {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 1rem !important;
-  }
-  .layout-strata .stratum-row {
-    width: 100% !important;
-  }
-</style>
+<!-- Design System & Wow Layer -->
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/wow-features.css">
 </head>
 <body class="min-h-screen">
 
-<!-- ══════════════════════ Header ══════════════════════ -->
-<header class="sticky top-0 z-40 backdrop-blur-md bg-[#080d1a]/95 border-b border-[#1e2d4a]">
-  <div class="flex items-center gap-3 px-4 h-14 overflow-x-auto scroll-thin flex-nowrap">
-    <!-- brand -->
-    <div class="flex items-center gap-2.5 shrink-0">
-      <div class="w-8 h-8 rounded-lg bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="#38bdf8" stroke-width="1.5"/>
-          <path d="M8 4.5v7M4.5 8h7" stroke="#38bdf8" stroke-width="1.6" stroke-linecap="round"/>
+<a href="#left-col" class="skip-link">Skip to command</a>
+
+<!-- ══════════════════════ Topbar Header (Focus items only) ══════════════════════ -->
+<header class="topbar sticky top-0 z-40 bg-bg border-b border-border">
+  <div class="topbar-inner flex items-center justify-between gap-3 px-4 h-14 flex-nowrap">
+    <!-- Brand -->
+    <div class="brand flex items-center gap-2.5 shrink-0">
+      <div class="brand-mark w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-ink shrink-0" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="shrink-0 block">
+          <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M8 4.5v7M4.5 8h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
       </div>
-      <div class="leading-tight">
-        <div class="text-sm font-bold tracking-wider text-[#e2e8f0]">EMS DISPATCH</div>
-        <div class="text-[10px] text-[#8899b5] tracking-widest font-medium">CONTROL ROOM · CLASSICAL AI</div>
+      <div class="brand-text leading-tight">
+        <div class="brand-name text-[13px] font-bold tracking-wider text-text">EMS DISPATCH</div>
+        <div class="text-[11px] text-muted font-medium">Control room · Classical AI</div>
       </div>
     </div>
 
-    <div class="w-px h-8 bg-[#1e2d4a] shrink-0"></div>
+    <div class="w-px h-6 bg-border shrink-0" aria-hidden="true"></div>
 
-    <!-- scenario + seed -->
-    <label class="flex items-center gap-1.5 text-[11px] text-[#8899b5] shrink-0">
-      SCENARIO
-      <select id="scenario" class="px-2 py-1.5 text-xs w-40"></select>
-    </label>
-    <label class="flex items-center gap-1.5 text-[11px] text-[#8899b5] shrink-0">
-      SEED
-      <input id="seed" type="number" value="7" class="px-2 py-1.5 text-xs w-14">
-    </label>
+    <!-- Segmented Tab Switch: Command / Analyze -->
+    <div class="segmented shrink-0" role="tablist" aria-label="Dashboard view">
+      <button
+        id="viewCommandBtn"
+        type="button"
+        class="segmented-btn is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="view-command"
+        tabindex="0"
+      >
+        <span class="nav-glyph-box" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+          </svg>
+        </span>
+        <span class="segmented-label">Command</span>
+      </button>
+      <button
+        id="viewAnalyzeBtn"
+        type="button"
+        class="segmented-btn"
+        role="tab"
+        aria-selected="false"
+        aria-controls="view-analyze"
+        tabindex="-1"
+      >
+        <span class="nav-glyph-box" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/>
+            <line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+        </span>
+        <span class="segmented-label">Analyze</span>
+      </button>
+    </div>
 
-    <!-- fleet summary (fixed straight-line layout) -->
-    <div id="fleet-summary" class="mono flex items-center gap-2 text-[11px] text-[#8899b5] px-2.5 py-1 bg-[#131f37]/60 border border-[#1e2d4a] rounded-lg whitespace-nowrap shrink-0">
-      <span class="text-[#38bdf8] font-bold">—</span> <span class="text-[#8899b5]">units</span> · <span class="text-[#818cf8] font-bold">—</span> <span class="text-[#8899b5]">stations</span> · <span class="text-[#06b6d4] font-bold">—</span> <span class="text-[#06b6d4]">hospitals</span> · <span class="text-[#f43f5e] font-bold">—</span> <span class="text-[#8899b5]">calls</span>
+    <div class="w-px h-6 bg-border shrink-0" aria-hidden="true"></div>
+
+    <!-- Scenario + Seed -->
+    <div class="flex items-center gap-3 shrink-0">
+      <label class="flex items-center gap-1.5 text-xs text-muted shrink-0">
+        <span>Scenario</span>
+        <select id="scenario" class="px-2 py-1.5 text-xs w-36 sm:w-44" aria-label="Select scenario"></select>
+      </label>
+      <label class="flex items-center gap-1.5 text-xs text-muted shrink-0">
+        <span>Seed</span>
+        <input id="seed" type="number" value="7" class="px-2 py-1.5 text-xs w-14" aria-label="Simulation random seed">
+      </label>
     </div>
 
     <div class="flex-1 min-w-[8px]"></div>
 
-    <!-- speed / tickRate -->
-    <label class="flex items-center gap-2 text-[11px] text-[#8899b5] shrink-0">
-      TICK RATE
-      <input id="speed" type="range" min="1" max="40" value="8" class="speed w-24">
-      <span id="speed-val" class="mono text-[11px] text-[#38bdf8] w-9 text-right font-medium">8/s</span>
-    </label>
-    <div class="flex items-center gap-1 shrink-0">
-      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="1">1×</button>
-      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="8">8×</button>
-      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="20">20×</button>
-      <button class="speed-preset btn btn-ghost px-1.5 py-1 text-[10px]" data-speed="40">MAX</button>
+    <!-- Sim primary controls: Run / Pause -->
+    <div class="flex items-center gap-1.5 shrink-0" role="group" aria-label="Simulation primary controls">
+      <button id="btn-start" class="btn btn-primary px-3.5 h-8 text-xs font-bold inline-flex items-center justify-center" aria-label="Start simulation">START</button>
+      <button id="btn-pause" class="btn btn-amber px-3 h-8 text-xs inline-flex items-center justify-center hidden" aria-label="Pause simulation">PAUSE</button>
     </div>
 
-    <!-- layout view toggle (horizontalStrata) -->
-    <button id="btn-toggle-strata" class="btn btn-ghost px-2.5 py-1.5 text-xs flex items-center gap-1.5 shrink-0" title="Toggle Horizontal Strata View (Layered panoramic layout)">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="2" y="2" width="12" height="3" rx="1"/>
-        <rect x="2" y="6.5" width="12" height="3" rx="1"/>
-        <rect x="2" y="11" width="12" height="3" rx="1"/>
-      </svg>
-      <span class="text-[10px] text-[#8899b5]">VIEW:</span>
-      <span id="strata-mode-label" class="text-[10px] text-[#38bdf8] font-mono">SIDEBAR</span>
-    </button>
-
-    <!-- controls (start button label is START) -->
+    <!-- Clock & status readout -->
     <div class="flex items-center gap-2 shrink-0">
-      <button id="btn-start" class="btn btn-primary px-3.5 py-1.5 text-xs font-bold">START</button>
-      <button id="btn-pause" class="btn btn-amber px-3 py-1.5 text-xs hidden">PAUSE</button>
-      <button id="btn-step" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Advance one tick">STEP</button>
-      <button id="btn-replay" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Replay the run from memory">REPLAY</button>
-      <button id="btn-benchmark" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Run a quick smart vs naive benchmark for this scenario">BENCHMARK</button>
-      <button id="btn-reset" class="btn btn-ghost px-2.5 py-1.5 text-xs" title="Restart the same scenario">RESET</button>
+      <div class="status-chip flex items-center gap-1.5 px-2.5 h-8 bg-surface-2 rounded-lg" role="status" aria-label="Simulation state">
+        <span class="nav-glyph-box" aria-hidden="true"><span id="status-dot" class="dot dot-idle"></span></span>
+        <span id="status-text" class="status-text mono text-xs tracking-wider uppercase font-bold text-muted">IDLE</span>
+      </div>
+      <span id="clock" class="mono text-xs text-muted bg-surface-2 rounded-lg px-2.5 h-8 inline-flex items-center whitespace-nowrap" aria-label="Simulation clock">t 0 · 0s</span>
     </div>
 
-    <!-- clock -->
-    <div class="flex items-center gap-2 shrink-0 pl-1">
-      <div id="status-dot" class="dot dot-paused"></div>
-      <span id="clock" class="mono text-xs text-[#8899b5] bg-[#0d1527] border border-[#1e2d4a] rounded-lg px-2.5 py-1.5 whitespace-nowrap">t 0 · 0s</span>
-    </div>
+    <!-- Theme toggle -->
+    <button
+      id="themeToggleBtn"
+      type="button"
+      class="icon-btn shrink-0 h-8 px-2.5"
+      title="Toggle light / dark theme"
+      aria-label="Toggle light / dark theme"
+      aria-pressed="false"
+    >
+      <span id="themeToggleIcon" class="nav-glyph-box" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+        </svg>
+      </span>
+      <span class="icon-btn-label" id="themeToggleLabel">Dark</span>
+    </button>
   </div>
 </header>
 
-<!-- ══════════════════════ Main Layout ══════════════════════ -->
-<main id="main-layout" class="max-w-[1680px] mx-auto p-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] items-start transition-all duration-200">
+<!-- ══════════════════════ Slim Left-Edge Hover Sidebar ══════════════════════ -->
+<aside id="edge-sidebar" class="edge-sidebar" aria-label="Simulation secondary controls rail">
+  <div class="edge-sidebar-header">
+    <div class="edge-sidebar-header-icon" title="Tools &amp; Tuning" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="21" x2="4" y2="14"/>
+        <line x1="4" y1="10" x2="4" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12" y2="3"/>
+        <line x1="20" y1="21" x2="20" y2="16"/>
+        <line x1="20" y1="12" x2="20" y2="3"/>
+        <line x1="1" y1="14" x2="7" y2="14"/>
+        <line x1="9" y1="8" x2="15" y2="8"/>
+        <line x1="17" y1="16" x2="23" y2="16"/>
+      </svg>
+    </div>
+    <span class="sidebar-label font-bold text-xs tracking-wider uppercase text-text ml-1">Tools &amp; Tuning</span>
+  </div>
 
-  <!-- ── Left column (or Top Strata) ── -->
-  <div id="left-col" class="space-y-4 min-w-0">
-
-    <!-- Map card with rotation control -->
-    <section class="card relative overflow-hidden">
-      <div class="flex items-center justify-between px-3.5 pt-3 pb-1.5 border-b border-[#1e2d4a]/60">
-        <div class="flex items-center gap-2.5">
-          <div class="card-title">LIVE CITY MAP</div>
-          <span class="text-[10px] text-[#546682] font-mono">ROAD NETWORK</span>
-          
-          <!-- Map Rotation Control -->
-          <button id="btn-rotate-map" class="btn btn-ghost px-2 py-0.5 text-[9.5px] mono flex items-center gap-1 text-[#8899b5] hover:text-[#e2e8f0] border border-[#1e2d4a]" title="Rotate map 90° for optimal screen fit">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M2 8a6 6 0 1 0 2-4.5L1 6"/>
-              <path d="M1 2v4h4"/>
-            </svg>
-            <span>ROTATE:</span>
-            <span id="rotation-label" class="text-[#38bdf8] font-bold">0°</span>
-          </button>
-        </div>
-        <div id="sim-name" class="mono text-[11px] text-[#8899b5]">—</div>
+  <div class="edge-sidebar-body py-2 space-y-2">
+    <!-- Secondary actions -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title sidebar-label">Step &amp; Debug</div>
+      <div class="space-y-0.5">
+        <button id="btn-step" class="sidebar-btn" title="Advance one tick (Step)" aria-label="Advance one tick">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+          </span>
+          <span class="sidebar-label text-xs font-semibold">Advance Step</span>
+        </button>
+        <button id="btn-replay" class="sidebar-btn" title="Replay run from memory" aria-label="Replay run from memory">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </span>
+          <span class="sidebar-label text-xs font-semibold">Replay Run</span>
+        </button>
+        <button id="btn-benchmark" class="sidebar-btn" title="Run smart vs naive benchmark" aria-label="Run benchmark">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+          </span>
+          <span class="sidebar-label text-xs font-semibold">Run Benchmark</span>
+        </button>
+        <button id="btn-reset" class="sidebar-btn" title="Restart scenario (Reset)" aria-label="Reset simulation">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </span>
+          <span class="sidebar-label text-xs font-semibold">Reset Scenario</span>
+        </button>
       </div>
-      <div id="map-shell" class="relative min-h-[460px] h-[520px] md:h-[580px] lg:h-[620px] bg-[#070b16]">
-        <canvas id="map" class="absolute inset-0 w-full h-full"></canvas>
-        <div id="map-hint" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div class="mono text-[11px] text-[#546682] tracking-widest bg-[#0d1527]/80 px-4 py-2 rounded border border-[#1e2d4a]">ESTABLISHING TELEMETRY LINK…</div>
+    </div>
+
+    <!-- Tick Rate / Speed -->
+    <div class="sidebar-section pt-1.5">
+      <div class="sidebar-speed-header sidebar-label">
+        <span class="sidebar-speed-title">Tick Rate</span>
+        <span id="speed-val" class="sidebar-speed-val">8/s</span>
+      </div>
+      <div class="px-0">
+        <div class="sidebar-speed-row flex items-center min-h-[44px] h-[44px]">
+          <span class="sidebar-btn-icon" title="Simulation tick rate">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </span>
+          <div class="flex-1 min-w-0 pr-3 sidebar-label">
+            <input id="speed" type="range" min="1" max="40" value="8" class="speed w-full" aria-label="Simulation tick rate">
+          </div>
         </div>
-        
-        <!-- Hover tooltip -->
-        <div id="hover-info" class="mono absolute top-3 left-3 bg-[#0d1527]/95 backdrop-blur border border-[#1e2d4a] rounded-lg px-3.5 py-2.5 text-[11px] hidden shadow-2xl z-20 pointer-events-none max-w-xs"></div>
-        
-        <!-- Interactive Vector Legend -->
-        <div id="legend" class="absolute bottom-3 right-3 bg-[#0d1527]/95 backdrop-blur border border-[#1e2d4a] rounded-lg text-[10px] shadow-2xl z-20 transition-all duration-200">
-          <div class="flex items-center justify-between px-3 py-2 border-b border-[#1e2d4a]/80 bg-[#131f37]/40 rounded-t-lg gap-3">
-            <div class="flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" class="text-[#38bdf8]">
-                <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                <circle cx="8" cy="8" r="2" fill="currentColor"/>
-              </svg>
-              <span class="font-bold text-[#8899b5] tracking-wider">MAP SYMBOLS</span>
+        <div class="flex items-center gap-1 px-3 mt-1 sidebar-label" role="group" aria-label="Speed presets">
+          <button class="speed-preset btn btn-ghost px-1.5 py-1 text-xs flex-1" data-speed="1" aria-label="1 tick per second">1×</button>
+          <button class="speed-preset btn btn-ghost px-1.5 py-1 text-xs flex-1" data-speed="8" aria-label="8 ticks per second">8×</button>
+          <button class="speed-preset btn btn-ghost px-1.5 py-1 text-xs flex-1" data-speed="20" aria-label="20 ticks per second">20×</button>
+          <button class="speed-preset btn btn-ghost px-1.5 py-1 text-xs flex-1" data-speed="40" aria-label="Maximum ticks per second">MAX</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Display / Layout & Sound -->
+    <div class="sidebar-section pt-1.5">
+      <div class="sidebar-section-title sidebar-label">Layout &amp; View</div>
+      <div class="space-y-0.5">
+        <button id="btn-rotate-map" class="sidebar-btn" title="Rotate map 90°" aria-label="Rotate map 90 degrees">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          </span>
+          <span class="sidebar-label sidebar-label-row flex-1 text-xs">
+            <span class="text-muted">Map Rotate</span>
+            <span id="rotation-label" class="mono font-bold text-ink">0°</span>
+          </span>
+        </button>
+
+        <button id="wow-audio-toggle" class="sidebar-btn wow-btn" aria-pressed="false" aria-label="Toggle audio effects" title="Toggle sound effects">
+          <span class="sidebar-btn-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          </span>
+          <span class="sidebar-label sidebar-label-row flex-1 text-xs">
+            <span class="text-muted">Sound FX</span>
+            <span class="wow-audio-state mono font-bold text-ink">OFF</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Fleet summary in sidebar -->
+    <div class="sidebar-section pt-1.5 sidebar-fleet">
+      <div class="sidebar-section-title sidebar-label">Fleet Telemetry</div>
+      <div class="sidebar-fleet-body sidebar-label px-2 pt-1">
+        <div id="fleet-summary" class="mono text-xs text-muted p-2.5 bg-surface-2 border border-border rounded-lg leading-relaxed" role="status" aria-label="Fleet units summary">
+          <span class="text-ink font-bold">—</span> <span class="text-muted">units</span> · <span class="text-muted font-bold">—</span> <span class="text-muted">stations</span> · <span class="text-muted font-bold">—</span> <span class="text-muted">hospitals</span> · <span class="text-muted font-bold">—</span> <span class="text-muted">calls</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══════════════════════ Main Layout ══════════════════════ -->
+<main id="main-layout" class="max-w-[1680px] ml-11 md:ml-12 lg:ml-14 mr-auto p-4 transition-all duration-200">
+
+  <!-- ══════════════════════ View 1: Command ══════════════════════ -->
+  <div id="view-command" role="tabpanel" aria-labelledby="viewCommandBtn">
+    <div id="left-col" class="space-y-6 min-w-0">
+
+      <!-- Phase banner & Telemetry indicator (WOW 3.1) -->
+      <div class="flex items-center justify-between gap-3">
+        <div id="wow-phase" class="wow-phase flex-1" role="status" aria-live="polite">
+          <span class="wow-phase__dot"></span>
+          <span class="wow-phase__label">System standby</span>
+          <span class="wow-phase__note">waiting for a run</span>
+        </div>
+        <div id="wow-phase-indicator" class="wow-phase-indicator" role="status" aria-label="System status indicator">
+          <span class="wow-phase-indicator__dot"></span>
+          <span class="wow-phase-indicator__label">DISPATCH READY</span>
+          <span class="wow-phase-indicator__metrics">16 UNITS · 4 HOSPITALS</span>
+        </div>
+      </div>
+
+      <!-- Live City Map Card -->
+      <section class="card relative overflow-hidden" aria-labelledby="mapHeading">
+        <div class="flex items-center justify-between px-4 pt-3 pb-2">
+          <div class="flex items-center gap-2.5">
+            <h2 id="mapHeading" class="card-title">Live city map</h2>
+            <span class="text-xs text-muted font-mono">Road network</span>
+          </div>
+          <div id="sim-name" class="mono text-xs text-muted" aria-label="Scenario name">—</div>
+        </div>
+
+        <div id="map-shell" class="relative min-h-[460px] h-[520px] md:h-[580px] lg:h-[620px] bg-bg">
+          <canvas id="map" class="absolute inset-0 w-full h-full" aria-label="Interactive city simulation map"></canvas>
+          <canvas id="wow-trails" aria-hidden="true"></canvas>
+          <div id="wow-blockage-flash" role="alert" aria-live="assertive">
+            <span class="wow-flash__label">Route cut detected</span>
+          </div>
+
+          <div id="map-hint" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="flex flex-col items-center justify-center text-center p-6 space-y-2 select-none">
+              <div class="map-hint-icon w-10 h-10 rounded-lg bg-surface-2 border border-border flex items-center justify-center text-muted mb-1" aria-hidden="true">
+                <svg class="map-hint-play-glyph translate-x-[1px]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </div>
+              <div class="text-xs font-semibold text-text tracking-normal">Select a scenario and press Start</div>
+              <div class="text-[11px] text-muted">Configure dispatch parameters or load a preset to begin simulation</div>
             </div>
-            <button id="btn-toggle-legend" class="btn btn-ghost px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider text-[#8899b5] hover:text-[#e2e8f0]" title="Toggle legend visibility">
-              <span id="legend-toggle-label">HIDE</span>
+          </div>
+          
+          <!-- Hover tooltip -->
+          <div id="hover-info" role="tooltip" class="mono absolute top-3 left-3 bg-surface border border-border-strong rounded-lg px-3.5 py-2.5 text-xs hidden shadow-lg z-20 pointer-events-none max-w-xs"></div>
+          
+          <!-- Interactive Vector Legend (collapsible, closed default, minimal compact rows) -->
+          <div id="legend" class="absolute bottom-3 right-3 bg-surface border border-border-strong rounded-lg text-xs shadow-lg z-20 transition-all duration-200" role="region" aria-label="Map symbols legend">
+            <div class="flex items-center justify-between px-3 py-2 bg-surface-2 rounded-t-lg gap-3">
+              <div class="flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" class="text-ink" aria-hidden="true">
+                  <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="8" cy="8" r="2" fill="currentColor"/>
+                </svg>
+                <span class="font-bold text-muted tracking-wider">Map symbols</span>
+              </div>
+              <button id="btn-toggle-legend" class="btn btn-ghost px-2 py-0.5 text-xs font-mono uppercase tracking-wider text-muted hover:text-text" aria-expanded="false" aria-controls="legend-content" title="Toggle legend visibility" aria-label="Toggle map symbols legend">
+                <span id="legend-toggle-label">SHOW</span>
+              </button>
+            </div>
+            
+            <div id="legend-content" class="p-2.5 space-y-2 max-h-[340px] overflow-y-auto scroll-thin hidden text-[11px]">
+              <!-- Facilities -->
+              <div>
+                <div class="text-[10px] font-bold text-muted tracking-wider uppercase mb-1">Facilities</div>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                  <div class="flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true">
+                      <path d="M2 9 L10 2 L18 9" fill="#818cf8" stroke="#4338ca" stroke-width="1.2" stroke-linejoin="round"/>
+                      <rect x="3" y="9" width="14" height="9" rx="1" fill="#818cf8" stroke="#4338ca" stroke-width="1.2"/>
+                      <rect x="7" y="11" width="6" height="7" rx="0.5" fill="#312e81"/>
+                      <line x1="7" y1="13" x2="13" y2="13" stroke="#6366f1" stroke-width="0.8"/>
+                      <line x1="7" y1="15" x2="13" y2="15" stroke="#6366f1" stroke-width="0.8"/>
+                    </svg>
+                    <span class="text-text font-medium">Station</span>
+                  </div>
+
+                  <div class="flex items-center gap-1.5">
+                    <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true">
+                      <rect x="2" y="2" width="16" height="16" rx="3" fill="#06b6d4" stroke="#0891b2" stroke-width="1.2"/>
+                      <path d="M10 5.5 v9 M5.5 10 h9" stroke="var(--bg)" stroke-width="2.6" stroke-linecap="square"/>
+                    </svg>
+                    <span class="text-text font-medium">Hospital</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Call Severity -->
+              <div class="pt-1">
+                <div class="text-[10px] font-bold text-muted tracking-wider uppercase mb-1">Call severity</div>
+                <div class="grid grid-cols-3 gap-1">
+                  <div class="flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true">
+                      <polygon points="10,3 18,17 2,17" fill="#fbbf24" stroke="var(--bg)" stroke-width="1.2"/>
+                    </svg>
+                    <span class="text-[#fbbf24] font-medium">Sev 3</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true">
+                      <polygon points="10,2 18,10 10,18 2,10" fill="#fb923c" stroke="var(--bg)" stroke-width="1.2"/>
+                    </svg>
+                    <span class="text-[#fb923c] font-medium">Sev 4</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true">
+                      <polygon points="10,3 12.2,7.5 17.2,8.2 13.6,11.7 14.5,16.7 10,14.3 5.5,16.7 6.4,11.7 2.8,8.2 7.8,7.5" fill="#f43f5e" stroke="var(--bg)" stroke-width="1"/>
+                    </svg>
+                    <span class="text-[#f43f5e] font-medium">Sev 5 ★</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Fleet Units: Collapsible Group -->
+              <details class="pt-1 group" open>
+                <summary class="cursor-pointer text-[10px] font-bold text-muted tracking-wider uppercase mb-1 flex items-center justify-between list-none select-none">
+                  <span>Fleet units (7)</span>
+                  <span class="text-[9px] text-dim group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] pt-0.5">
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#94a3b8" stroke="var(--bg)" stroke-width="2"/></svg>
+                    <span class="text-muted">Idle</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#22d3ee" stroke="var(--bg)" stroke-width="2"/></svg>
+                    <span class="text-muted">Drifting</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#34d399" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#34d399"/></svg>
+                    <span class="text-muted">En route</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#fbbf24" stroke="var(--bg)" stroke-width="2"/></svg>
+                    <span class="text-muted">On scene</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#a78bfa" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#a78bfa"/></svg>
+                    <span class="text-muted">Transporting</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#fb923c" stroke="var(--bg)" stroke-width="2"/></svg>
+                    <span class="text-muted">Returning</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 col-span-2">
+                    <svg width="11" height="11" viewBox="0 0 20 20" class="shrink-0" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#f43f5e" stroke="var(--bg)" stroke-width="2"/></svg>
+                    <span class="text-muted">Blocked</span>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Road Network & Hazards -->
+              <div class="pt-1">
+                <div class="text-[10px] font-bold text-muted tracking-wider uppercase mb-1">Roads &amp; hazards</div>
+                <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                  <div class="flex items-center gap-1.5">
+                    <svg width="13" height="11" viewBox="0 0 20 16" class="shrink-0" aria-hidden="true"><line x1="2" y1="8" x2="18" y2="8" stroke="var(--border-strong)" stroke-width="2.5"/><circle cx="3" cy="8" r="1.5" fill="var(--muted)"/><circle cx="17" cy="8" r="1.5" fill="var(--muted)"/></svg>
+                    <span class="text-muted">Road edge</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="13" height="11" viewBox="0 0 20 16" class="shrink-0" aria-hidden="true"><line x1="2" y1="8" x2="18" y2="8" stroke="var(--ink)" stroke-width="2" stroke-dasharray="3 2"/></svg>
+                    <span class="text-ink font-medium">Active route</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="13" height="11" viewBox="0 0 20 16" class="shrink-0" aria-hidden="true"><line x1="2" y1="8" x2="18" y2="8" stroke="#fb923c" stroke-width="2.5"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="#fb923c" stroke-width="1.8"/></svg>
+                    <span class="text-muted">Known blockage</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg width="13" height="11" viewBox="0 0 20 16" class="shrink-0" aria-hidden="true"><line x1="2" y1="8" x2="18" y2="8" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="3 2"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="var(--border-strong)" stroke-width="1.5"/></svg>
+                    <span class="text-muted">Hidden blockage</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Incident ticker slot (max 5) & Hospital loads grid -->
+      <div class="grid md:grid-cols-2 gap-5">
+        <!-- Live Incident Ticker Slot (WOW 3.6) -->
+        <section class="card p-4" aria-labelledby="tickerHeading">
+          <div class="flex items-center justify-between mb-2.5">
+            <h2 id="tickerHeading" class="card-title">Live incident ticker</h2>
+            <span class="mono text-xs text-muted">15s window</span>
+          </div>
+          <ul id="wow-ticker" class="space-y-1.5 text-xs" aria-live="polite"></ul>
+        </section>
+
+        <!-- Hospital Load Bars (WOW 3.6) -->
+        <section class="card p-4" aria-labelledby="hospitalHeading">
+          <div class="flex items-center justify-between mb-2.5">
+            <h2 id="hospitalHeading" class="card-title">Hospital load</h2>
+            <span class="mono text-xs text-muted">Bed capacity</span>
+          </div>
+          <div id="wow-hospital-loads" class="space-y-2"></div>
+        </section>
+      </div>
+
+      <!-- Scenario Story Briefs (WOW 3.2) -->
+      <section class="card p-4" aria-labelledby="storyHeading">
+        <div class="flex items-center justify-between mb-2.5">
+          <h2 class="card-title" id="storyHeading">Scenario briefs</h2>
+          <span class="mono text-xs text-muted">Select scenario preset</span>
+        </div>
+        <div id="wow-story-cards"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════ View 2: Analyze ══════════════════════ -->
+  <div id="view-analyze" role="tabpanel" aria-labelledby="viewAnalyzeBtn" class="hidden">
+    <div id="right-col" class="max-w-[1240px] mx-auto px-2 sm:px-4 lg:px-6 space-y-6 min-w-0">
+
+      <!-- 1. Dispatch telemetry KPIs -->
+      <section class="card p-5" aria-labelledby="kpiHeading">
+        <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+          <h2 id="kpiHeading" class="card-title">Dispatch telemetry</h2>
+          <span class="text-xs text-muted font-mono">Real-time dispatch metrics</span>
+        </div>
+        <div id="stats-cards" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"></div>
+      </section>
+
+      <!-- 2. Response Time Sparkline (WOW 3.3) -->
+      <section class="card p-5" aria-labelledby="sparkHeading">
+        <div class="flex flex-wrap items-center justify-between gap-2 min-h-[32px] mb-3.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <h2 id="sparkHeading" class="card-title text-sm font-bold tracking-tight">Response Time</h2>
+            <span class="text-xs text-muted mono">· Last 60 samples</span>
+          </div>
+          <span class="mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border shrink-0">Rolling latency</span>
+        </div>
+        <canvas id="wow-spark-kpi" aria-label="Response time sparkline"></canvas>
+      </section>
+
+      <!-- 3. Classical AI search & solver metrics -->
+      <section class="card p-5" aria-labelledby="searchHeading">
+        <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+          <h2 id="searchHeading" class="card-title">Classical AI search &amp; solver metrics</h2>
+          <span class="text-xs text-muted font-mono font-semibold">A* · CSP · MDP · CNP · D* Lite</span>
+        </div>
+        <div class="grid gap-6 md:grid-cols-2">
+          <div>
+            <h3 class="text-xs text-muted font-bold tracking-wider uppercase mb-2.5">Search expansions</h3>
+            <div id="expansion-bars" class="space-y-2 bg-surface-2 p-3.5 rounded-lg border-0"></div>
+          </div>
+          <div>
+            <h3 class="text-xs text-muted font-bold tracking-wider uppercase mb-2.5">Module counters</h3>
+            <div id="module-counters" class="mono text-xs text-muted space-y-2 bg-surface-2 p-3.5 rounded-lg border-0"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Algorithm arena & Idle positioning (MDP) -->
+      <div class="grid md:grid-cols-2 gap-6">
+        <details class="card p-5 bg-surface border border-border rounded-lg" open>
+          <summary class="card-title min-h-[32px] flex items-center justify-between cursor-pointer select-none focus-visible:outline-none mb-3.5">
+            <span>Algorithm arena — informed vs uninformed</span>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="arena-chip">A* VS BFS</span>
+          </summary>
+          <div id="arena-box" class="mono text-xs min-h-[80px] bg-surface-2 p-3.5 rounded-lg border-0"></div>
+        </details>
+        <details class="card p-5 bg-surface border border-border rounded-lg" open>
+          <summary class="card-title min-h-[32px] flex items-center justify-between cursor-pointer select-none focus-visible:outline-none mb-3.5">
+            <span>Idle positioning — MDP value iteration</span>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="mdp-chip">MDP POLICY</span>
+          </summary>
+          <div id="mdp-box" class="mono text-xs min-h-[80px] bg-surface-2 p-3.5 rounded-lg border-0"></div>
+        </details>
+      </div>
+
+      <!-- 5. Benchmark comparison & Zone fairness (2-column grid) -->
+      <div class="grid md:grid-cols-2 gap-6">
+        <!-- Benchmark comparison (prose deleted, WOW 3.7 delta table included) -->
+        <section class="card p-5" aria-labelledby="benchHeading">
+          <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+            <h2 id="benchHeading" class="card-title">Benchmark comparison</h2>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="bench-status">Smart vs naive</span>
+          </div>
+          <div id="benchmark-box" class="mono text-xs space-y-3 max-h-[500px] overflow-y-auto scroll-thin pr-1 text-muted"></div>
+          <div id="wow-bench-delta" class="mt-3"></div>
+        </section>
+
+        <!-- Zone fairness (with WOW 3.5 Gini upgrade) -->
+        <section class="card p-5" aria-labelledby="fairnessHeading">
+          <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+            <h2 id="fairnessHeading" class="card-title">Zone fairness</h2>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="gini-count">GINI</span>
+          </div>
+          <div id="fairness-box" class="mono text-xs space-y-2 max-h-[300px] overflow-y-auto scroll-thin pr-1"></div>
+          <div id="wow-gini-val" class="mono text-xs text-muted mt-2.5">Gini —</div>
+          <canvas id="wow-gini" aria-label="Gini coefficient over time"></canvas>
+        </section>
+      </div>
+
+      <!-- 6. Replay scrubber + Export summary (WOW 3.8) -->
+      <div class="grid md:grid-cols-2 gap-6">
+        <section class="card p-5" aria-labelledby="replayHeading">
+          <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+            <h2 class="card-title" id="replayHeading">Replay scrubber</h2>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="replay-chip">Run timeline</span>
+          </div>
+          <div id="wow-replay">
+            <div id="wow-replay-label">Replay scrubber · Ready to play</div>
+            <div class="wow-replay__row">
+              <button id="wow-replay-play" class="wow-btn">PLAY</button>
+              <input id="wow-replay-slider" type="range" min="0" max="0" value="0" step="1" aria-label="replay frame">
+              <select id="wow-replay-rate" aria-label="replay rate">
+                <option value="1">1x</option>
+                <option value="2">2x</option>
+                <option value="4">4x</option>
+                <option value="8">8x</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="card p-5" aria-labelledby="captureHeading">
+          <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+            <h2 class="card-title" id="captureHeading">Capture</h2>
+            <span class="header-chip mono text-xs text-muted font-bold bg-surface-2 px-2.5 py-1 rounded border border-border" id="capture-chip">Export &amp; report</span>
+          </div>
+          <div class="wow-actions mb-3.5">
+            <button id="wow-export-png" class="wow-btn">EXPORT PNG</button>
+            <button id="wow-print" class="wow-btn">PRINT SUMMARY</button>
+          </div>
+          <div id="wow-summary-card"></div>
+        </section>
+      </div>
+
+      <!-- 7. Single Event Ledger (Merged recent-decisions + event-stream twins) -->
+      <section class="card p-5" aria-labelledby="ledgerHeading">
+        <div class="flex items-center justify-between min-h-[32px] mb-3.5">
+          <div class="flex items-center gap-2.5">
+            <h2 id="ledgerHeading" class="card-title">Event ledger</h2>
+            <span class="count-badge" id="evt-count">0</span>
+          </div>
+          <div class="segmented" role="group" aria-label="Event ledger view filter">
+            <button
+              id="ledgerEventsBtn"
+              type="button"
+              class="segmented-btn is-active text-xs py-1 px-3"
+              aria-pressed="true"
+              onclick="document.getElementById('events').classList.remove('hidden');document.getElementById('decisions').classList.add('hidden');this.classList.add('is-active');this.setAttribute('aria-pressed','true');var db=document.getElementById('ledgerDecBtn');db.classList.remove('is-active');db.setAttribute('aria-pressed','false');"
+            >
+              All events
+            </button>
+            <button
+              id="ledgerDecBtn"
+              type="button"
+              class="segmented-btn text-xs py-1 px-3"
+              aria-pressed="false"
+              onclick="document.getElementById('decisions').classList.remove('hidden');document.getElementById('events').classList.add('hidden');this.classList.add('is-active');this.setAttribute('aria-pressed','true');var eb=document.getElementById('ledgerEventsBtn');eb.classList.remove('is-active');eb.setAttribute('aria-pressed','false');"
+            >
+              Decisions (<span id="dec-count">0</span>)
             </button>
           </div>
-          
-          <div id="legend-content" class="p-3 space-y-2.5 max-h-[360px] overflow-y-auto scroll-thin">
-            <!-- Facilities Section -->
-            <div>
-              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">FACILITIES</div>
-              <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                <div class="flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 20 20" class="shrink-0">
-                    <path d="M2 9 L10 2 L18 9" fill="#818cf8" stroke="#4338ca" stroke-width="1.2" stroke-linejoin="round"/>
-                    <rect x="3" y="9" width="14" height="9" rx="1" fill="#818cf8" stroke="#4338ca" stroke-width="1.2"/>
-                    <rect x="7" y="11" width="6" height="7" rx="0.5" fill="#312e81"/>
-                    <line x1="7" y1="13" x2="13" y2="13" stroke="#6366f1" stroke-width="0.8"/>
-                    <line x1="7" y1="15" x2="13" y2="15" stroke="#6366f1" stroke-width="0.8"/>
-                  </svg>
-                  <div>
-                    <div class="text-[#e2e8f0] font-medium leading-none">Station</div>
-                    <div class="text-[9px] text-[#8899b5]">Ambulance Garage</div>
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 20 20" class="shrink-0">
-                    <rect x="2" y="2" width="16" height="16" rx="3" fill="#06b6d4" stroke="#0891b2" stroke-width="1.2"/>
-                    <path d="M10 5.5 v9 M5.5 10 h9" stroke="#ffffff" stroke-width="2.6" stroke-linecap="square"/>
-                  </svg>
-                  <div>
-                    <div class="text-[#e2e8f0] font-medium leading-none">Hospital</div>
-                    <div class="text-[9px] text-[#06b6d4] font-medium">Medical Beds (CSP)</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Incidents Section -->
-            <div class="border-t border-[#1e2d4a]/60 pt-2">
-              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">CALL SEVERITY</div>
-              <div class="grid grid-cols-3 gap-x-2 gap-y-1">
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
-                    <polygon points="10,3 18,17 2,17" fill="#fbbf24" stroke="#080d1a" stroke-width="1.2"/>
-                  </svg>
-                  <span class="text-[#fbbf24]">Sev 3</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
-                    <polygon points="10,2 18,10 10,18 2,10" fill="#fb923c" stroke="#080d1a" stroke-width="1.2"/>
-                  </svg>
-                  <span class="text-[#fb923c]">Sev 4</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="14" viewBox="0 0 20 20" class="shrink-0">
-                    <polygon points="10,3 12.2,7.5 17.2,8.2 13.6,11.7 14.5,16.7 10,14.3 5.5,16.7 6.4,11.7 2.8,8.2 7.8,7.5" fill="#f43f5e" stroke="#080d1a" stroke-width="1"/>
-                  </svg>
-                  <span class="text-[#f43f5e]">Sev 5 ★</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Fleet Status Section -->
-            <div class="border-t border-[#1e2d4a]/60 pt-2">
-              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">FLEET UNITS</div>
-              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[9.5px]">
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#94a3b8" stroke="#080d1a" stroke-width="2"/></svg>
-                  <span class="text-[#94a3b8]">Idle / Parked</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#22d3ee" stroke="#080d1a" stroke-width="2"/></svg>
-                  <span class="text-[#22d3ee]">Drifting (MDP)</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="8" fill="none" stroke="#34d399" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#34d399"/></svg>
-                  <span class="text-[#34d399]">En Route</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#fbbf24" stroke="#080d1a" stroke-width="2"/></svg>
-                  <span class="text-[#fbbf24]">On Scene</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="8" fill="none" stroke="#a78bfa" stroke-width="1.5"/><circle cx="10" cy="10" r="5" fill="#a78bfa"/></svg>
-                  <span class="text-[#a78bfa]">Transporting</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#fb923c" stroke="#080d1a" stroke-width="2"/></svg>
-                  <span class="text-[#fb923c]">Returning</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 20 20" class="shrink-0"><circle cx="10" cy="10" r="6" fill="#f43f5e" stroke="#080d1a" stroke-width="2"/></svg>
-                  <span class="text-[#f43f5e]">Blocked</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Roads & Blockages Section -->
-            <div class="border-t border-[#1e2d4a]/60 pt-2">
-              <div class="text-[9px] font-bold text-[#546682] tracking-wider uppercase mb-1">ROAD NETWORK & HAZARDS</div>
-              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[9.5px]">
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#1c2a44" stroke-width="2.5"/><circle cx="3" cy="8" r="1.5" fill="#546682"/><circle cx="17" cy="8" r="1.5" fill="#546682"/></svg>
-                  <span class="text-[#8899b5]">Road Edge</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#38bdf8" stroke-width="2" stroke-dasharray="3 2"/></svg>
-                  <span class="text-[#38bdf8]">Active Route</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#fb923c" stroke-width="2.5"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="#fb923c" stroke-width="1.8"/></svg>
-                  <span class="text-[#fb923c]">Known Blockage</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <svg width="14" height="12" viewBox="0 0 20 16" class="shrink-0"><line x1="2" y1="8" x2="18" y2="8" stroke="#64748b" stroke-width="2" stroke-dasharray="3 2"/><path d="M7 4 L13 12 M13 4 L7 12" stroke="#64748b" stroke-width="1.5"/></svg>
-                  <span class="text-[#64748b]">Hidden Blockage</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
-    </section>
+        <div id="events" class="mono text-xs space-y-2 max-h-[420px] overflow-y-auto scroll-thin pr-1"></div>
+        <div id="decisions" class="mono text-xs space-y-2 max-h-[420px] overflow-y-auto scroll-thin pr-1 hidden"></div>
+      </section>
 
-    <!-- KPIs -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-2.5">
-        <div class="card-title">CITY TELEMETRY</div>
-        <span class="text-[10px] text-[#546682] font-mono">REAL-TIME DISPATCH METRICS</span>
-      </div>
-      <div id="stats-cards" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
-    </section>
-
-    <!-- AI modules -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-3 border-b border-[#1e2d4a]/60 pb-2">
-        <div class="card-title">AI MODULES — CLASSICAL METHODS ONLY</div>
-        <span class="text-[10px] text-[#38bdf8] font-mono tracking-wider">A* · CSP · MDP · CNP · D* LITE</span>
-      </div>
-      <div id="ai-modules-grid" class="grid gap-4 lg:grid-cols-2">
-        <div>
-          <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1.5">SEARCH EXPANSIONS</h3>
-          <div id="expansion-bars" class="space-y-1.5 mb-3 bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60"></div>
-          <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1.5">MODULE COUNTERS</h3>
-          <div id="module-counters" class="mono text-[11px] text-[#8899b5] space-y-1.5 bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60"></div>
-        </div>
-        <div class="space-y-3">
-          <div>
-            <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1">ALGORITHM ARENA — INFORMED vs UNINFORMED</h3>
-            <div id="arena-box" class="mono text-[11px] bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60 min-h-[100px]"></div>
-          </div>
-          <div>
-            <h3 class="text-[10px] text-[#8899b5] font-bold tracking-widest uppercase mb-1">IDLE POSITIONING — MDP VALUE ITERATION</h3>
-            <div id="mdp-box" class="mono text-[11px] bg-[#080d1a]/50 p-2.5 rounded-lg border border-[#1e2d4a]/60 min-h-[90px]"></div>
-          </div>
-        </div>
-      </div>
-    </section>
+    </div>
   </div>
 
-  <!-- ── Right column (or Bottom Strata) ── -->
-  <div id="right-col" class="space-y-4 min-w-0">
-
-    <!-- Benchmark preview (smart vs naive stacks) -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
-        <div class="card-title">BENCHMARK COMPARISON</div>
-        <span class="mono text-[10px] text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30" id="bench-status">SMART vs NAIVE · PREVIEW</span>
-      </div>
-      <div id="benchmark-box" class="mono text-[11px] space-y-1.5 max-h-[240px] overflow-y-auto scroll-thin pr-1 text-[#546682]">
-        Click BENCHMARK in the header to run 3 seeds × (smart CNP · D*Lite · MDP · CSP versus greedy · A* rerun · station · first-free) for the current scenario. Full study: <span class="text-[#8899b5]">python run_benchmark.py</span>.
-      </div>
-    </section>
-
-    <!-- Zone fairness (equity) -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
-        <div class="card-title">ZONE FAIRNESS INDEX</div>
-        <span class="mono text-[10px] text-[#c084fc] font-bold bg-[#c084fc]/10 px-1.5 py-0.5 rounded border border-[#c084fc]/30" id="gini-count">GINI</span>
-      </div>
-      <div id="fairness-box" class="mono text-[11px] space-y-1.5 max-h-[300px] overflow-y-auto scroll-thin pr-1"></div>
-    </section>
-
-    <!-- Live decisions -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
-        <div class="card-title">RECENT DECISIONS</div>
-        <span class="mono text-[10px] text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30" id="dec-count">0</span>
-      </div>
-      <div id="decisions" class="mono text-[11px] space-y-1.5 max-h-[320px] overflow-y-auto scroll-thin pr-1"></div>
-    </section>
-
-    <!-- Event stream -->
-    <section class="card p-3.5">
-      <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#1e2d4a]/60">
-        <div class="card-title">EVENT STREAM</div>
-        <span class="mono text-[10px] text-[#38bdf8] font-bold bg-[#38bdf8]/10 px-1.5 py-0.5 rounded border border-[#38bdf8]/30" id="evt-count">0</span>
-      </div>
-      <div id="events" class="mono text-[11px] space-y-1.5 max-h-[420px] overflow-y-auto scroll-thin pr-1"></div>
-    </section>
-  </div>
 </main>
 
-<footer class="max-w-[1680px] mx-auto px-4 pb-6">
-  <div class="mono text-[10px] text-[#546682] border-t border-[#1e2d4a] pt-3 flex flex-wrap items-center justify-between gap-2">
-    <div>SIMULATION OF CLASSICAL AI — A* / DIJKSTRA / GBFS / BFS · LRTA* · D* LITE · CNP AUCTIONS · CSP BED ALLOCATION · MDP IDLE POSITIONING. NO MACHINE LEARNING.</div>
-    <div class="text-[#8899b5]">EMS COMMAND DASHBOARD v2.0</div>
-  </div>
+<!-- Footer one-liner -->
+<footer class="footer max-w-[1680px] mx-auto px-4 py-3 no-print">
+  <span>EMS Dispatch — AI Ambulance Command Dashboard</span>
+  <span class="footer-dot" aria-hidden="true">•</span>
+  <span class="text-muted">Classical AI: A* · D* Lite · CSP · CNP · MDP</span>
 </footer>
 
+<!-- Core Script followed by Wow Feature Layer -->
 <script src="/static/app.js"></script>
+<script src="/static/wow-features.js"></script>
+
+<!-- Shell interactions: Theme toggle, view switching, keyboard markup & accessibility -->
+<script>
+(function () {
+  // Theme toggle
+  var toggleBtn = document.getElementById("themeToggleBtn");
+  var toggleLabel = document.getElementById("themeToggleLabel");
+  var toggleIcon = document.getElementById("themeToggleIcon");
+
+  function renderTheme(theme) {
+    var isDark = theme === "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.dataset.theme = theme;
+    if (toggleBtn) {
+      toggleBtn.setAttribute("aria-pressed", isDark ? "true" : "false");
+      toggleBtn.setAttribute("title", isDark ? "Switch to light theme" : "Switch to dark theme");
+      toggleBtn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+    }
+    if (toggleLabel) {
+      toggleLabel.textContent = isDark ? "Light" : "Dark";
+    }
+    if (toggleIcon) {
+      toggleIcon.innerHTML = isDark
+        ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>'
+        : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+    }
+  }
+
+  var currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+  renderTheme(currentTheme);
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", function () {
+      if (typeof window.toggleTheme === "function") {
+        var next = window.toggleTheme();
+        renderTheme(next);
+        try {
+          localStorage.setItem("foai_app_theme", next);
+          localStorage.setItem("ems_theme", next);
+        } catch (e) {}
+      } else {
+        var active = document.documentElement.getAttribute("data-theme") || "dark";
+        var nextTheme = active === "dark" ? "light" : "dark";
+        try {
+          localStorage.setItem("foai_app_theme", nextTheme);
+          localStorage.setItem("ems_theme", nextTheme);
+        } catch (e) {}
+        renderTheme(nextTheme);
+        window.dispatchEvent(new CustomEvent("foai:theme-toggle"));
+      }
+    });
+  }
+
+  window.addEventListener("foai:theme", function (e) {
+    if (e && e.detail && e.detail.theme) {
+      renderTheme(e.detail.theme);
+      try {
+        localStorage.setItem("foai_app_theme", e.detail.theme);
+      } catch (err) {}
+    }
+  });
+
+  // Dual guarantee: Ensure status dot is accompanied by dynamic text label (never color-only)
+  var dot = document.getElementById("status-dot");
+  var statusText = document.getElementById("status-text");
+  if (dot && statusText) {
+    var updateStatusLabel = function () {
+      if (dot.classList.contains("dot-running")) {
+        statusText.textContent = "RUNNING";
+      } else if (dot.classList.contains("dot-finished")) {
+        statusText.textContent = "FINISHED";
+      } else if (dot.classList.contains("dot-paused")) {
+        statusText.textContent = "PAUSED";
+      } else {
+        statusText.textContent = "IDLE";
+      }
+    };
+    updateStatusLabel();
+    var obs = new MutationObserver(updateStatusLabel);
+    obs.observe(dot, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  // Two views tab switch: Command / Analyze
+  var cmdBtn = document.getElementById("viewCommandBtn");
+  var anaBtn = document.getElementById("viewAnalyzeBtn");
+  var cmdView = document.getElementById("view-command");
+  var anaView = document.getElementById("view-analyze");
+
+  function setView(target) {
+    var isCmd = target === "command";
+    if (cmdBtn) {
+      cmdBtn.classList.toggle("is-active", isCmd);
+      cmdBtn.setAttribute("aria-selected", isCmd ? "true" : "false");
+      cmdBtn.setAttribute("tabindex", isCmd ? "0" : "-1");
+    }
+    if (anaBtn) {
+      anaBtn.classList.toggle("is-active", !isCmd);
+      anaBtn.setAttribute("aria-selected", !isCmd ? "true" : "false");
+      anaBtn.setAttribute("tabindex", !isCmd ? "0" : "-1");
+    }
+    if (cmdView) cmdView.classList.toggle("hidden", !isCmd);
+    if (anaView) anaView.classList.toggle("hidden", isCmd);
+    if (isCmd && typeof window.resize === "function") {
+      setTimeout(window.resize, 50);
+    }
+    window.dispatchEvent(new CustomEvent("foai:view-change", { detail: { view: target } }));
+  }
+
+  if (cmdBtn) {
+    cmdBtn.addEventListener("click", function () { setView("command"); });
+    cmdBtn.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (anaBtn) {
+          anaBtn.focus();
+          setView("analyze");
+        }
+      }
+    });
+  }
+  if (anaBtn) {
+    anaBtn.addEventListener("click", function () { setView("analyze"); });
+    anaBtn.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (cmdBtn) {
+          cmdBtn.focus();
+          setView("command");
+        }
+      }
+    });
+  }
+
+  // Edge sidebar keyboard collapse on Escape & mouseleave reset (persists nothing)
+  var sidebar = document.getElementById("edge-sidebar");
+  if (sidebar) {
+    sidebar.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        sidebar.classList.add("is-collapsed");
+        var active = document.activeElement;
+        if (active && sidebar.contains(active)) {
+          var startBtn = document.getElementById("btn-start");
+          if (startBtn) startBtn.focus();
+          else active.blur();
+        }
+      }
+    });
+    sidebar.addEventListener("mouseleave", function () {
+      sidebar.classList.remove("is-collapsed");
+    });
+  }
+
+  // Legend aria-expanded synchronization with closed-default
+  var legendBtn = document.getElementById("btn-toggle-legend");
+  var legendContent = document.getElementById("legend-content");
+  if (legendBtn && legendContent) {
+    var updateLegendAria = function () {
+      var isExpanded = !legendContent.classList.contains("hidden");
+      legendBtn.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+    };
+    updateLegendAria();
+    var obsLeg = new MutationObserver(updateLegendAria);
+    obsLeg.observe(legendContent, { attributes: true, attributeFilter: ["class"] });
+  }
+})();
+</script>
 </body>
 </html>
